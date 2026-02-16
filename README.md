@@ -61,7 +61,7 @@ atlantis-claude-code:
   llm_budget: 10
   additional_env:
     CRS_AGENT: claude_code
-    CLAUDE_MODEL: claude-sonnet-4-5-20250929
+    ANTHROPIC_MODEL: claude-sonnet-4-5-20250929
 
 llm_config:
   litellm_config: /path/to/sample-litellm-config.yaml
@@ -69,7 +69,7 @@ llm_config:
 
 ### 2. Configure LiteLLM
 
-Copy `oss-crs/sample-litellm-config.yaml` and set your API credentials. The LiteLLM proxy routes Claude Code's API calls to the Anthropic API (or your preferred provider). All models in `required_llms` must be configured — Claude Code uses the primary model for reasoning and may use smaller models (e.g., Haiku) for internal operations.
+Copy `oss-crs/sample-litellm-config.yaml` and set your API credentials. The LiteLLM proxy routes Claude Code's API calls to the Anthropic API (or your preferred provider). All models in `required_llms` must be configured. By default all model env vars point to the same model for benchmarking, but if you set individual tiers to different models, those must also be available in the proxy.
 
 ### 3. Run with oss-crs
 
@@ -82,8 +82,14 @@ crs-compose up -f crs-compose.yaml
 | Environment variable | Default | Description |
 |---|---|---|
 | `CRS_AGENT` | `claude_code` | Agent module name (maps to `agents/<name>.py`) |
-| `CLAUDE_MODEL` | `claude-sonnet-4-5-20250929` | Primary Claude model for reasoning |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-5-20250929` | Primary Claude model (also passed via `--model`) |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | `claude-sonnet-4-5-20250929` | Model for Claude Code subagents |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | `claude-sonnet-4-5-20250929` | Model the "opus" alias maps to |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | `claude-sonnet-4-5-20250929` | Model the "sonnet" alias maps to |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `claude-sonnet-4-5-20250929` | Model the "haiku" alias maps to |
 | `AGENT_TIMEOUT` | `0` (no limit) | Agent timeout in seconds (0 = run until budget exhausted) |
+
+All model env vars are set to the same value by default for consistent benchmarking. These are standard Claude Code env vars — set them to different models in `additional_env` if you want mixed-model runs.
 
 Available models:
 - `claude-opus-4-6`

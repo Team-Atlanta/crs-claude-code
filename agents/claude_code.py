@@ -17,9 +17,6 @@ from pathlib import Path
 
 logger = logging.getLogger("agent.claude_code")
 
-# Strip "anthropic/" prefix — LiteLLM uses it for routing, but the Claude CLI doesn't.
-_raw_model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-CLAUDE_MODEL = _raw_model.removeprefix("anthropic/")
 
 # 0 = no timeout (run until budget is exhausted)
 try:
@@ -48,7 +45,11 @@ def setup(source_dir: Path, config: dict) -> None:
         os.environ["ANTHROPIC_AUTH_TOKEN"] = llm_api_key
         os.environ["ANTHROPIC_API_KEY"] = ""
         logger.info("Claude Code configured with LiteLLM proxy: %s", llm_api_url)
-        logger.info("Model: %s", CLAUDE_MODEL)
+        logger.info("ANTHROPIC_MODEL: %s", os.environ.get("ANTHROPIC_MODEL", "(not set)"))
+        logger.info("CLAUDE_CODE_SUBAGENT_MODEL: %s", os.environ.get("CLAUDE_CODE_SUBAGENT_MODEL", "(not set)"))
+        logger.info("ANTHROPIC_DEFAULT_OPUS_MODEL: %s", os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "(not set)"))
+        logger.info("ANTHROPIC_DEFAULT_SONNET_MODEL: %s", os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "(not set)"))
+        logger.info("ANTHROPIC_DEFAULT_HAIKU_MODEL: %s", os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "(not set)"))
     else:
         logger.warning("No LLM API URL/key set, Claude Code may not work")
 
@@ -144,7 +145,6 @@ def run(
         "-p",
         "-d", str(source_dir),
         "--dangerously-skip-permissions",
-        "--model", CLAUDE_MODEL,
         "--debug-file", str(debug_log),
     ]
 

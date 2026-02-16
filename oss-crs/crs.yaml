@@ -18,9 +18,13 @@ crs_run_phase:
   patcher:
     dockerfile: oss-crs/patcher.Dockerfile
     additional_env:
-      # Default values. To override, set additional_env in compose yaml.
+      # Set via compose yaml additional_env.
       CRS_AGENT: claude_code
-      CLAUDE_MODEL: claude-sonnet-4-5-20250929
+      # ANTHROPIC_MODEL: claude-sonnet-4-5-20250929
+      # CLAUDE_CODE_SUBAGENT_MODEL: claude-sonnet-4-5-20250929
+      # ANTHROPIC_DEFAULT_OPUS_MODEL: claude-sonnet-4-5-20250929
+      # ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-4-5-20250929
+      # ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-sonnet-4-5-20250929
       # AGENT_TIMEOUT: "0"  # seconds, 0 = no limit (default)
 
 supported_target:
