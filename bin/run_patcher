@@ -17,6 +17,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 logging.basicConfig(
@@ -35,6 +37,8 @@ LANGUAGE = os.environ.get("FUZZING_LANGUAGE", "c")
 SANITIZER = os.environ.get("SANITIZER", "address")
 LLM_API_URL = os.environ.get("OSS_CRS_LLM_API_URL", "")
 LLM_API_KEY = os.environ.get("OSS_CRS_LLM_API_KEY", "")
+
+BUILDER_URL = os.environ.get("OSS_CRS_BUILDER_URL", "")
 
 # Agent selection
 CRS_AGENT = os.environ.get("CRS_AGENT", "claude_code")
@@ -94,6 +98,29 @@ def setup_source() -> Path | None:
     return project_dir
 
 
+def wait_for_builder(timeout: int = 300) -> bool:
+    """Block until the builder sidecar is healthy (safety net for startup races)."""
+    if not BUILDER_URL:
+        logger.warning("OSS_CRS_BUILDER_URL not set, skipping health check")
+        return True
+
+    health_url = f"{BUILDER_URL}/health"
+    logger.info("Waiting for builder sidecar at %s ...", health_url)
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        try:
+            with urllib.request.urlopen(health_url, timeout=5) as resp:
+                if resp.status == 200:
+                    logger.info("Builder sidecar is healthy")
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(5)
+
+    logger.error("Builder sidecar not healthy after %ds", timeout)
+    return False
+
+
 def reproduce_crash(pov_path: Path) -> str:
     """Reproduce crash via builder sidecar using the base (unpatched) build."""
     if not HARNESS:
@@ -139,14 +166,15 @@ def load_agent(agent_name: str):
         sys.exit(1)
 
 
-def process_povs(pov_paths: list[Path], source_dir: Path, agent) -> None:
+def process_povs(pov_paths: list[Path], source_dir: Path, agent) -> bool:
     """Process a batch of POV variants in a single agent session.
 
     All POVs are assumed to be variants of the same vulnerability.
     We reproduce all crashes, then hand the full set to the agent so it
     can produce a patch that fixes all of them.
+
+    Returns True if a patch was produced.
     """
-    # Reproduce all crashes
     povs = []
     for pov_path in pov_paths:
         logger.info("Reproducing crash for POV: %s", pov_path.name)
@@ -163,6 +191,14 @@ def process_povs(pov_paths: list[Path], source_dir: Path, agent) -> None:
               language=LANGUAGE, sanitizer=SANITIZER)
 
     _reset_source(source_dir)
+
+    patches = list(PATCHES_DIR.glob("*.diff"))
+    if patches:
+        logger.info("Patch produced: %s", [p.name for p in patches])
+        return True
+
+    logger.warning("Agent did not produce a patch")
+    return False
 
 
 # --- Main loop ---
@@ -235,11 +271,15 @@ def main():
         sys.exit(0)
 
     logger.info("Found %d POV(s): %s", len(pov_files), [p.name for p in pov_files])
-    process_povs(pov_files, source_dir, agent)
 
-    logger.info("Done. Keeping container alive for patch submission daemon.")
-    while True:
-        time.sleep(60)
+    if not wait_for_builder():
+        logger.error("Cannot proceed without builder sidecar")
+        sys.exit(1)
+
+    if process_povs(pov_files, source_dir, agent):
+        # Wait for the submission daemon to flush (batch_time=10s) before exiting.
+        logger.info("Patch submitted. Waiting for daemon to flush...")
+        time.sleep(30)
 
 
 if __name__ == "__main__":

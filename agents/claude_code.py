@@ -21,10 +21,11 @@ logger = logging.getLogger("agent.claude_code")
 _raw_model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 CLAUDE_MODEL = _raw_model.removeprefix("anthropic/")
 
+# 0 = no timeout (run until budget is exhausted)
 try:
-    AGENT_TIMEOUT = int(os.environ.get("AGENT_TIMEOUT", "3600"))
+    AGENT_TIMEOUT = int(os.environ.get("AGENT_TIMEOUT", "0"))
 except ValueError:
-    AGENT_TIMEOUT = 3600
+    AGENT_TIMEOUT = 0
 
 _TEMPLATE_PATH = Path(__file__).with_suffix(".md")
 CLAUDE_MD_TEMPLATE = _TEMPLATE_PATH.read_text()
@@ -69,6 +70,14 @@ def setup(source_dir: Path, config: dict) -> None:
     claude_json.write_text(json.dumps(claude_config))
     claude_json.chmod(0o600)
     logger.info("Wrote Claude config to %s", claude_json)
+
+    # Global gitignore so CLAUDE.md never leaks into patches
+    global_gitignore = Path.home() / ".gitignore"
+    global_gitignore.write_text("CLAUDE.md\n")
+    subprocess.run(
+        ["git", "config", "--global", "core.excludesFile", str(global_gitignore)],
+        capture_output=True,
+    )
 
     logger.info("Agent setup complete")
 
@@ -126,18 +135,20 @@ def run(
         f"crash logs are in {work_dir}/crash_log_*.txt. See CLAUDE.md for tools and POV details."
     )
 
+    debug_log = work_dir / "claude_debug.log"
+    stdout_log = work_dir / "claude_stdout.log"
+    stderr_log = work_dir / "claude_stderr.log"
+
     cmd = [
         "claude",
         "-p",
         "-d", str(source_dir),
         "--dangerously-skip-permissions",
         "--model", CLAUDE_MODEL,
-        "--verbose",
+        "--debug-file", str(debug_log),
     ]
 
     # Stream stdout/stderr to log files (full conversation is in $HOME/.claude)
-    stdout_log = work_dir / "claude_stdout.log"
-    stderr_log = work_dir / "claude_stderr.log"
 
     try:
         with open(stdout_log, "w") as out_f, open(stderr_log, "w") as err_f:
@@ -153,7 +164,7 @@ def run(
             try:
                 proc.stdin.write(prompt)
                 proc.stdin.close()
-                proc.wait(timeout=AGENT_TIMEOUT)
+                proc.wait(timeout=AGENT_TIMEOUT or None)
                 logger.info("Claude Code exit code: %d", proc.returncode)
             except subprocess.TimeoutExpired:
                 logger.warning("Claude Code timed out (%ds), killing process tree", AGENT_TIMEOUT)

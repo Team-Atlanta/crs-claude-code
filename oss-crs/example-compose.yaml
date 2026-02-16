@@ -1,34 +1,38 @@
 ##############################################################################
 #                        CRS Compose Configuration                           #
-#          Example for atlantis-claude-code with incremental build            #
+#          Example for atlantis-claude-code with builder CRS                 #
 ##############################################################################
 
 # --- General Settings -------------------------------------------------------
 run_env: local
 docker_registry: local
 
-# Enable incremental build for snapshot-based patch testing
-incremental_build: true
-
 # --- Infrastructure ---------------------------------------------------------
 oss_crs_infra:
   cpuset: "0-1"
   memory: "8G"
 
+# --- Builder CRS (snapshot-based incremental builds) -----------------------
+oss-crs-builder:
+  source:
+    local_path: /path/to/oss-crs/builder           # UPDATE: path to oss-crs/builder
+  cpuset: "2-3"                                     # UPDATE: available CPU cores
+  memory: "8G"                                      # UPDATE: available memory
+
 # --- CRS (atlantis-claude-code) ---------------------------------------------
 atlantis-claude-code:
   source:
-    local_path: /path/to/crs-claude-code       # UPDATE: local filesystem path
-  cpuset: "2-7"                                 # UPDATE: available CPU cores
-  memory: "16G"                                 # UPDATE: available memory
-  llm_budget: 50                                # LLM budget in USD
+    local_path: /path/to/crs-claude-code            # UPDATE: local filesystem path
+  cpuset: "4-7"                                     # UPDATE: available CPU cores
+  memory: "16G"                                     # UPDATE: available memory
+  llm_budget: 10                                    # LLM budget in USD
   additional_env:
     # Override CRS defaults here. Available models:
     #   claude-opus-4-6, claude-opus-4-5-20251101, claude-opus-4-1-20250805,
     #   claude-sonnet-4-5-20250929, claude-sonnet-4-20250514, claude-haiku-4-5-20251001
     CRS_AGENT: claude_code
     CLAUDE_MODEL: claude-sonnet-4-5-20250929
-    AGENT_TIMEOUT: "3600"
+    # AGENT_TIMEOUT: "3600"                          # Optional: seconds, 0 = no limit (default)
 
 # --- LLM Configuration -----------------------------------------------------
 llm_config:
