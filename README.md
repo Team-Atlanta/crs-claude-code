@@ -39,6 +39,13 @@ oss-crs/
   sample-litellm-config.yaml  # LiteLLM proxy config template
 ```
 
+## Prerequisites
+
+- **[oss-crs](https://github.com/oss-crs/oss-crs)** — the CRS framework (`crs-compose` CLI)
+- **[oss-crs-builder](https://github.com/oss-crs/builder)** — builder sidecar that handles compilation and test execution
+
+Set up both by following their respective READMEs before proceeding.
+
 ## Quick start
 
 ### 1. Configure `crs-compose.yaml`
