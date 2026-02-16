@@ -75,16 +75,17 @@ def setup(source_dir: Path, config: dict) -> None:
 
 def run(
     source_dir: Path,
-    crash_log: str,
-    pov_path: Path,
+    povs: list[tuple[Path, str]],
     harness: str,
     patches_dir: Path,
     work_dir: Path,
     language: str = "c",
+    sanitizer: str = "address",
 ) -> bool:
     """Launch Claude Code in agentic mode to autonomously fix the vulnerability.
 
-    Writes crash log and CLAUDE.md (with concrete paths), then sends a prompt.
+    povs is a list of (pov_path, crash_log) tuples — variants of the same bug.
+    Writes all crash logs and CLAUDE.md (with concrete paths), then sends a prompt.
     Claude Code autonomously analyzes, edits, builds, tests, iterates, and
     writes the final .diff to patches_dir.
 
@@ -92,22 +93,38 @@ def run(
     """
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write crash log to a file so Claude can reference it
-    crash_log_path = work_dir / "crash_log.txt"
-    crash_log_path.write_text(crash_log)
-    logger.info("Wrote crash log to %s", crash_log_path)
+    # Write each crash log to a file and build POV sections for CLAUDE.md
+    pov_sections = []
+    crash_log_paths = []
+    for i, (pov_path, crash_log) in enumerate(povs):
+        crash_log_path = work_dir / f"crash_log_{i}.txt"
+        crash_log_path.write_text(crash_log)
+        crash_log_paths.append(crash_log_path)
+        logger.info("Wrote crash log to %s", crash_log_path)
 
-    # Write CLAUDE.md with concrete paths for this POV
+        pov_sections.append(
+            f"- POV: `{pov_path}` — crash log: `{crash_log_path}`\n"
+            f"  Test: `libCRS run-pov {pov_path} <response_dir> --harness {harness} --build-id <build_id>`"
+        )
+
+    pov_list = "\n".join(pov_sections)
+
+    # Write CLAUDE.md with concrete paths for all POVs
     claude_md = CLAUDE_MD_TEMPLATE.format(
         language=language,
+        sanitizer=sanitizer,
         work_dir=work_dir,
-        pov_path=pov_path,
         harness=harness,
         patches_dir=patches_dir,
+        pov_list=pov_list,
+        pov_count=len(povs),
     )
     (source_dir / "CLAUDE.md").write_text(claude_md)
 
-    prompt = f"Fix the vulnerability described in {crash_log_path}. See CLAUDE.md for available tools."
+    prompt = (
+        f"Fix the vulnerability. There are {len(povs)} POV variant(s) — "
+        f"crash logs are in {work_dir}/crash_log_*.txt. See CLAUDE.md for tools and POV details."
+    )
 
     cmd = [
         "claude",
@@ -118,32 +135,38 @@ def run(
         "--verbose",
     ]
 
+    # Stream stdout/stderr to log files (full conversation is in $HOME/.claude)
+    stdout_log = work_dir / "claude_stdout.log"
+    stderr_log = work_dir / "claude_stderr.log"
+
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=source_dir,
-            start_new_session=True,
-        )
-        try:
-            stdout, stderr = proc.communicate(input=prompt, timeout=AGENT_TIMEOUT)
-            logger.info("Claude Code exit code: %d", proc.returncode)
-            if stdout:
-                logger.info("Claude Code output:\n%s", stdout)
-            if proc.returncode != 0 and stderr:
-                logger.warning("Claude Code stderr:\n%s", stderr)
-        except subprocess.TimeoutExpired:
-            logger.warning("Claude Code timed out (%ds), killing process tree", AGENT_TIMEOUT)
-            os.killpg(proc.pid, signal.SIGTERM)
-            time.sleep(2)
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
+        with open(stdout_log, "w") as out_f, open(stderr_log, "w") as err_f:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=out_f,
+                stderr=err_f,
+                text=True,
+                cwd=source_dir,
+                start_new_session=True,
+            )
+            try:
+                proc.stdin.write(prompt)
+                proc.stdin.close()
+                proc.wait(timeout=AGENT_TIMEOUT)
+                logger.info("Claude Code exit code: %d", proc.returncode)
+            except subprocess.TimeoutExpired:
+                logger.warning("Claude Code timed out (%ds), killing process tree", AGENT_TIMEOUT)
+                os.killpg(proc.pid, signal.SIGTERM)
+                time.sleep(2)
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
     except Exception as e:
         logger.error("Error running Claude Code: %s", e)
         return False
+
+    if proc.returncode != 0:
+        logger.warning("Claude Code failed (rc=%d), see %s", proc.returncode, stderr_log)
 
     # Check if agent produced any patch files
     patches = list(patches_dir.glob("*.diff"))

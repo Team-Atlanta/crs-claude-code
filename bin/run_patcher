@@ -32,6 +32,7 @@ SNAPSHOT_IMAGE = os.environ.get("OSS_CRS_SNAPSHOT_IMAGE", "")
 TARGET = os.environ.get("OSS_CRS_TARGET", "")
 HARNESS = os.environ.get("OSS_CRS_TARGET_HARNESS", "")
 LANGUAGE = os.environ.get("FUZZING_LANGUAGE", "c")
+SANITIZER = os.environ.get("SANITIZER", "address")
 LLM_API_URL = os.environ.get("OSS_CRS_LLM_API_URL", "")
 LLM_API_KEY = os.environ.get("OSS_CRS_LLM_API_KEY", "")
 
@@ -138,21 +139,28 @@ def load_agent(agent_name: str):
         sys.exit(1)
 
 
-def process_pov(pov_path: Path, source_dir: Path, agent) -> None:
-    """Process a single POV: reproduce crash, then hand off to agent."""
-    pov_name = pov_path.stem
-    logger.info("Processing POV: %s", pov_name)
+def process_povs(pov_paths: list[Path], source_dir: Path, agent) -> None:
+    """Process a batch of POV variants in a single agent session.
 
-    crash_log = reproduce_crash(pov_path)
-    logger.info("Crash log:\n%s", crash_log)
+    All POVs are assumed to be variants of the same vulnerability.
+    We reproduce all crashes, then hand the full set to the agent so it
+    can produce a patch that fixes all of them.
+    """
+    # Reproduce all crashes
+    povs = []
+    for pov_path in pov_paths:
+        logger.info("Reproducing crash for POV: %s", pov_path.name)
+        crash_log = reproduce_crash(pov_path)
+        logger.info("Crash log for %s:\n%s", pov_path.name, crash_log)
+        povs.append((pov_path, crash_log))
 
     _reset_source(source_dir)
 
-    pov_work_dir = WORK_DIR / f"pov-{pov_name}"
-    pov_work_dir.mkdir(parents=True, exist_ok=True)
+    agent_work_dir = WORK_DIR / "agent"
+    agent_work_dir.mkdir(parents=True, exist_ok=True)
 
-    agent.run(source_dir, crash_log, pov_path, HARNESS, PATCHES_DIR, pov_work_dir,
-              language=LANGUAGE)
+    agent.run(source_dir, povs, HARNESS, PATCHES_DIR, agent_work_dir,
+              language=LANGUAGE, sanitizer=SANITIZER)
 
     _reset_source(source_dir)
 
@@ -218,28 +226,20 @@ def main():
         logger.error("FETCH_DIR %s does not exist. Is the volume mounted?", FETCH_DIR)
         sys.exit(1)
 
-    # Watch FETCH_DIR for POVs
-    logger.info("Watching for POVs in %s...", FETCH_DIR)
-    processed: set[str] = set()
-    last_heartbeat = time.time()
+    # All POVs are present before container starts (FETCH_DIR is read-only).
+    # Scan once, batch all variants into a single agent session.
+    pov_files = sorted(f for f in FETCH_DIR.rglob("*") if f.is_file() and not f.name.startswith("."))
 
+    if not pov_files:
+        logger.warning("No POV files found in %s", FETCH_DIR)
+        sys.exit(0)
+
+    logger.info("Found %d POV(s): %s", len(pov_files), [p.name for p in pov_files])
+    process_povs(pov_files, source_dir, agent)
+
+    logger.info("Done. Keeping container alive for patch submission daemon.")
     while True:
-        pov_files = [f for f in FETCH_DIR.rglob("*") if f.is_file() and not f.name.startswith(".")]
-        new_povs = [f for f in pov_files if str(f) not in processed]
-
-        if not new_povs:
-            now = time.time()
-            if now - last_heartbeat > 300:
-                logger.info("Still waiting for POVs... (%d processed so far)", len(processed))
-                last_heartbeat = now
-            time.sleep(5)
-            continue
-
-        last_heartbeat = time.time()
-
-        for pov_file in new_povs:
-            processed.add(str(pov_file))
-            process_pov(pov_file, source_dir, agent)
+        time.sleep(60)
 
 
 if __name__ == "__main__":

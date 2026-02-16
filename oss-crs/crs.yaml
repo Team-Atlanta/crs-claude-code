@@ -27,8 +27,10 @@ supported_target:
   mode:
     - full
     - delta
-  language:
+  language:  # language-agnostic — agent edits source, builder sidecar handles compilation
     - c
+    - c++
+    - jvm
   sanitizer:
     - address
   architecture:

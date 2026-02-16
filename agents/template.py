@@ -19,20 +19,23 @@ def setup(source_dir: Path, config: dict) -> None:
 
 def run(
     source_dir: Path,
-    crash_log: str,
-    pov_path: Path,
+    povs: list[tuple[Path, str]],
     harness: str,
     patches_dir: Path,
     work_dir: Path,
     language: str = "c",
+    sanitizer: str = "address",
 ) -> bool:
     """Run the agent autonomously.
 
+    povs is a list of (pov_path, crash_log) tuples — variants of the same bug.
+
     The agent should:
-    1. Analyze the crash log
+    1. Analyze the crash logs
     2. Edit source files to fix the vulnerability
     3. Build and test using libCRS commands
     4. Write verified .diff file(s) to patches_dir
+    5. Verify the patch fixes ALL POV variants
 
     Returns True if the agent produced a patch.
     """
