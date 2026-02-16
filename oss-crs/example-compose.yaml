@@ -1,0 +1,28 @@
+##############################################################################
+#                        CRS Compose Configuration                           #
+#          Example for atlantis-claude-code with incremental build            #
+##############################################################################
+
+# --- General Settings -------------------------------------------------------
+run_env: local
+docker_registry: local
+
+# Enable incremental build for snapshot-based patch testing
+incremental_build: true
+
+# --- Infrastructure ---------------------------------------------------------
+oss_crs_infra:
+  cpuset: "0-1"
+  memory: "8G"
+
+# --- CRS (atlantis-claude-code) ---------------------------------------------
+atlantis-claude-code:
+  source:
+    local_path: /path/to/crs-claude-code       # UPDATE: local filesystem path
+  cpuset: "2-7"                                 # UPDATE: available CPU cores
+  memory: "16G"                                 # UPDATE: available memory
+  llm_budget: 50                                # LLM budget in USD
+
+# --- LLM Configuration -----------------------------------------------------
+llm_config:
+  litellm_config: /path/to/sample-litellm-config.yaml  # UPDATE: path to litellm config

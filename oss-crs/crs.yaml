@@ -1,0 +1,39 @@
+name: atlantis-claude-code
+type:
+  - bug-fixing
+version: 1.0.0
+docker_registry: ghcr.io/team-atlanta/atlantis-claude-code
+
+prepare_phase:
+  hcl: oss-crs/docker-bake.hcl
+
+target_build_phase:
+  - name: default-build
+    dockerfile: oss-crs/builder.Dockerfile
+    outputs:
+      - build
+      - src
+
+crs_run_phase:
+  patcher:
+    dockerfile: oss-crs/patcher.Dockerfile
+    additional_env:
+      # Switch models easily by changing this value:
+      #   claude-sonnet-4-20250514, claude-opus-4-20250514,
+      #   claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001
+      CLAUDE_MODEL: claude-sonnet-4-20250514
+      CLAUDE_MAX_ITERATIONS: "3"
+
+supported_target:
+  mode:
+    - full
+    - delta
+  language:
+    - c
+  sanitizer:
+    - address
+  architecture:
+    - x86_64
+
+required_llms:
+  - claude-sonnet-4-20250514

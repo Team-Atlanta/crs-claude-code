@@ -1,0 +1,42 @@
+#!/bin/bash
+set -e
+
+log() {
+    echo "[compile_target] $*"
+}
+
+log "Compiling target project..."
+
+# Standard oss-fuzz compile
+compile
+
+# Submit build outputs
+libCRS submit-build-output "$OUT" build
+
+# Find the project git repo under $SRC (pwd is unreliable after compile)
+REPODIR=""
+for dir in "$SRC"/*/; do
+    if [ -d "$dir/.git" ]; then
+        REPODIR="$dir"
+        break
+    fi
+done
+
+if [ -z "$REPODIR" ]; then
+    log "WARNING: No git repo found under $SRC, falling back to pwd"
+    REPODIR=$(pwd)
+fi
+
+# Create $SRC/repo symlink for the patcher to locate the source
+if [[ "$REPODIR" == "$SRC"/* ]]; then
+    RELPATH="${REPODIR#$SRC/}"
+    RELPATH="${RELPATH%/}"
+    ln -sfn "$RELPATH" "$SRC/repo"
+    log "Created symlink $SRC/repo -> $RELPATH"
+else
+    cp -r "$REPODIR" "$SRC/repo"
+    log "Copied $REPODIR to $SRC/repo"
+fi
+libCRS submit-build-output "$SRC" src
+
+log "Build completed successfully."
