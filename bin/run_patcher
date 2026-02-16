@@ -2,17 +2,18 @@
 """
 atlantis-claude-code patcher module.
 
-Bug-fixing CRS that uses Claude Code CLI to analyze crashes, generate patches,
-and test them using the oss-crs snapshot image for incremental rebuilds.
+Thin launcher that delegates vulnerability fixing to a swappable AI agent.
+The agent (selected via CRS_AGENT env var) handles: bug analysis, code editing,
+building (via libCRS), testing (via libCRS), iteration, and final patch
+submission (writing .diff to /patches/).
 
-To create a similar CRS with a different agent (Codex, GitHub Copilot CLI, etc.),
-replace setup_agent() and generate_patch() — everything else is reusable.
+To add a new agent, create a module in agents/ implementing setup() and run().
 """
 
-import json
+import importlib
 import logging
 import os
-import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -34,133 +35,16 @@ LANGUAGE = os.environ.get("FUZZING_LANGUAGE", "c")
 LLM_API_URL = os.environ.get("OSS_CRS_LLM_API_URL", "")
 LLM_API_KEY = os.environ.get("OSS_CRS_LLM_API_KEY", "")
 
-# Agent-specific config
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
-MAX_ITERATIONS = int(os.environ.get("CLAUDE_MAX_ITERATIONS", "3"))
+# Agent selection
+CRS_AGENT = os.environ.get("CRS_AGENT", "claude_code")
+
+# Crash log truncation limit (keep the tail — ASAN summaries are at the end)
+MAX_CRASH_LOG_CHARS = 16384
 
 # Framework directories
 FETCH_DIR = Path("/OSS_CRS_FETCH_DIR")
 WORK_DIR = Path("/work")
 PATCHES_DIR = Path("/patches")
-
-
-# --- Agent setup (replace for different coding agents) ---
-
-
-def setup_agent(source_dir: Path) -> None:
-    """Configure Claude Code CLI to use LiteLLM proxy."""
-    # IS_SANDBOX=1 allows --dangerously-skip-permissions as root
-    os.environ["IS_SANDBOX"] = "1"
-
-    if LLM_API_URL and LLM_API_KEY:
-        os.environ["ANTHROPIC_BASE_URL"] = LLM_API_URL
-        # Use AUTH_TOKEN (Authorization: Bearer header) for LiteLLM proxy.
-        # Force API_KEY empty to avoid conflict (x-api-key vs Bearer).
-        os.environ["ANTHROPIC_AUTH_TOKEN"] = LLM_API_KEY
-        os.environ["ANTHROPIC_API_KEY"] = ""
-        logger.info("Claude Code configured with LiteLLM proxy: %s", LLM_API_URL)
-        logger.info("Model: %s", CLAUDE_MODEL)
-    else:
-        logger.warning("No LLM API URL/key set, Claude Code may not work")
-
-    claude_config = {
-        "numStartups": 0,
-        "autoUpdaterStatus": "disabled",
-        "userID": "-",
-        "hasCompletedOnboarding": True,
-        "lastOnboardingVersion": "1.0.0",
-        "projects": {
-            str(source_dir): {
-                "hasTrustDialogAccepted": True,
-                "hasCompletedProjectOnboarding": True,
-            }
-        },
-    }
-    claude_json = Path.home() / ".claude.json"
-    claude_json.write_text(json.dumps(claude_config))
-    claude_json.chmod(0o600)
-    logger.info("Wrote Claude config to %s", claude_json)
-
-
-# --- Patch generation (replace for different coding agents) ---
-
-
-def generate_patch(source_dir: Path, crash_log: str, failed_patches: str = "") -> str | None:
-    """Use Claude Code CLI to generate a patch for the crash.
-
-    Returns a unified diff string, or None if no patch was generated.
-    """
-    _reset_source(source_dir)
-
-    if not failed_patches:
-        prompt = f"""You are a security engineer fixing a vulnerability in a {LANGUAGE} project.
-Analyze the crash log below and create a minimal patch to fix the root cause.
-Apply your fix directly to the source files.
-
-NEVER do any git operations (commit, push, reset, etc.).
-NEVER modify files outside the project source directory.
-
-<crash_log>
-{crash_log}
-</crash_log>
-"""
-    else:
-        prompt = f"""You are a security engineer fixing a vulnerability in a {LANGUAGE} project.
-Previous patch attempts failed to compile or fix the bug:
-
-{failed_patches}
-
-Analyze why they failed and try a completely different approach.
-Apply your fix directly to the source files.
-
-NEVER do any git operations (commit, push, reset, etc.).
-NEVER modify files outside the project source directory.
-
-<crash_log>
-{crash_log}
-</crash_log>
-"""
-
-    cmd = [
-        "claude",
-        "-p",
-        "-d", str(source_dir),
-        "--dangerously-skip-permissions",
-        "--model", CLAUDE_MODEL,
-        "--verbose",
-    ]
-
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=source_dir,
-        )
-        try:
-            stdout, stderr = proc.communicate(input=prompt, timeout=300)
-            logger.info("Claude Code exit code: %d", proc.returncode)
-            if stdout:
-                logger.info("Claude Code output:\n%s", stdout)
-            if proc.returncode != 0 and stderr:
-                logger.warning("Claude Code stderr:\n%s", stderr)
-        except subprocess.TimeoutExpired:
-            logger.warning("Claude Code timed out (300s), killing process tree")
-            _kill_process_tree(proc.pid)
-            proc.wait()
-    except Exception as e:
-        logger.error("Error running Claude Code: %s", e)
-        return None
-
-    # Extract diff
-    diff = _git_diff(source_dir)
-
-    # Reset source for next iteration
-    _reset_source(source_dir)
-
-    return diff
 
 
 # --- Common infrastructure ---
@@ -172,35 +56,14 @@ def _reset_source(source_dir: Path) -> None:
         logger.warning("Removing stale lock file: %s", lock_file)
         lock_file.unlink()
 
-    result = subprocess.run(
-        ["git", "restore", "--source=HEAD", ":/"],
-        cwd=source_dir, capture_output=True, text=True,
+    subprocess.run(
+        ["git", "reset", "--hard", "HEAD"],
+        cwd=source_dir, capture_output=True, timeout=60,
     )
-    if result.returncode != 0:
-        logger.warning("git restore failed: %s, trying checkout -f", result.stderr.strip())
-        subprocess.run(
-            ["git", "checkout", "-f", "HEAD"],
-            cwd=source_dir, capture_output=True,
-        )
-
-
-def _git_diff(source_dir: Path) -> str | None:
-    """Capture git diff from the source directory."""
-    result = subprocess.run(
-        ["git", "diff"], capture_output=True, text=True, cwd=source_dir,
+    subprocess.run(
+        ["git", "clean", "-fd"],
+        cwd=source_dir, capture_output=True, timeout=60,
     )
-    diff = result.stdout.strip()
-    return diff if diff else None
-
-
-def _kill_process_tree(pid: int) -> None:
-    """Kill a process and all its children."""
-    try:
-        os.kill(pid, signal.SIGTERM)
-        time.sleep(2)
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
 
 
 def setup_source() -> Path | None:
@@ -216,7 +79,6 @@ def setup_source() -> Path | None:
         logger.error("Failed to download source: %s", result.stderr)
         return None
 
-    # Find git repo (compile_target creates a "repo" symlink)
     project_dir = source_dir / "repo"
     if not project_dir.exists():
         for d in source_dir.iterdir():
@@ -236,7 +98,7 @@ def reproduce_crash(pov_path: Path) -> str:
     if not HARNESS:
         return "No harness configured"
 
-    response_dir = WORK_DIR / "reproduce_crash"
+    response_dir = WORK_DIR / f"pov-{pov_path.stem}" / "reproduce"
     response_dir.mkdir(parents=True, exist_ok=True)
 
     pov_cmd = [
@@ -252,10 +114,12 @@ def reproduce_crash(pov_path: Path) -> str:
         )
         logger.info("reproduce_crash run-pov exit code: %d", result.returncode)
 
-        # Read crash log from pov_stderr.log
         pov_stderr = response_dir / "pov_stderr.log"
         if pov_stderr.exists():
-            return pov_stderr.read_text()
+            log = pov_stderr.read_text()
+            if len(log) > MAX_CRASH_LOG_CHARS:
+                log = "[...truncated...]\n" + log[-MAX_CRASH_LOG_CHARS:]
+            return log
 
         return result.stdout or result.stderr or "No crash output captured"
     except subprocess.TimeoutExpired:
@@ -264,146 +128,33 @@ def reproduce_crash(pov_path: Path) -> str:
         return f"Error reproducing crash: {e}"
 
 
-def build_and_verify(patch_diff: str, pov_path: Path, work_dir: Path) -> tuple[str, bool]:
-    """Build patched binary, then verify the fix via separate run-pov call.
-
-    Uses libCRS apply-patch-build to compile, then libCRS run-pov to test
-    the POV against the new build artifacts.
-
-    Returns:
-        Tuple of (failure_reason, success). failure_reason is a string
-        describing why the patch failed, or empty if it succeeded.
-    """
-    work_dir.mkdir(parents=True, exist_ok=True)
-    patch_file = work_dir / "patch.diff"
-    patch_file.write_text(patch_diff)
-    build_response_dir = work_dir / "build_response"
-    build_response_dir.mkdir(parents=True, exist_ok=True)
-
-    # Step 1: Build
-    build_cmd = [
-        "libCRS", "apply-patch-build",
-        str(patch_file), str(build_response_dir),
-    ]
-
+def load_agent(agent_name: str):
+    """Dynamically load an agent module from the agents package."""
+    module_name = f"agents.{agent_name}"
     try:
-        result = subprocess.run(
-            build_cmd, capture_output=True, text=True, timeout=600,
-        )
-        logger.info("apply-patch-build exit code: %d", result.returncode)
-        if result.stdout:
-            logger.info("apply-patch-build stdout: %s", result.stdout.strip())
-        if result.stderr:
-            logger.info("apply-patch-build stderr: %s", result.stderr.strip())
-
-        if result.returncode != 0:
-            # Log the build log from the response directory
-            build_log = build_response_dir / "build.log"
-            if build_log.exists():
-                logger.info("Build log:\n%s", build_log.read_text().strip())
-            return "compilation error", False
-
-    except subprocess.TimeoutExpired:
-        logger.warning("apply-patch-build timed out (600s)")
-        return "build timed out", False
-    except Exception as e:
-        logger.error("Error in apply-patch-build: %s", e)
-        return f"build error: {e}", False
-
-    # Step 2: Run POV if harness is configured
-    if not HARNESS:
-        return "", True
-
-    build_id_file = build_response_dir / "build_id"
-    if not build_id_file.exists():
-        logger.error("Build succeeded but no build_id written")
-        return "build_id missing from build response", False
-
-    build_id = build_id_file.read_text().strip()
-    logger.info("Build succeeded, build_id=%s. Running POV...", build_id)
-
-    pov_response_dir = work_dir / "pov_response"
-    pov_response_dir.mkdir(parents=True, exist_ok=True)
-
-    pov_cmd = [
-        "libCRS", "run-pov",
-        str(pov_path), str(pov_response_dir),
-        "--harness", HARNESS,
-        "--build-id", build_id,
-    ]
-
-    try:
-        result = subprocess.run(
-            pov_cmd, capture_output=True, text=True, timeout=600,
-        )
-        logger.info("run-pov exit code: %d", result.returncode)
-
-        pov_exit_file = pov_response_dir / "pov_exit_code"
-        if pov_exit_file.exists():
-            pov_exit = int(pov_exit_file.read_text().strip())
-            logger.info("POV exit code: %d", pov_exit)
-            if pov_exit == 0:
-                logger.info("POV no longer crashes — fix verified!")
-                return "", True
-            else:
-                pov_log = ""
-                pov_stderr = pov_response_dir / "pov_stderr.log"
-                if pov_stderr.exists():
-                    pov_log = pov_stderr.read_text()
-                logger.info("POV still crashes (exit %d): %s", pov_exit, pov_log)
-                return (
-                    "compiled successfully but the POV still crashes the binary. "
-                    "The patch does not fix the root cause of the vulnerability."
-                ), False
-
-        # run-pov returned non-zero without writing pov_exit_code
-        if result.returncode != 0:
-            return "POV execution failed", False
-
-        return "", True
-
-    except subprocess.TimeoutExpired:
-        logger.warning("run-pov timed out (60s)")
-        return "POV verification timed out", False
-    except Exception as e:
-        logger.error("Error in run-pov: %s", e)
-        return f"POV error: {e}", False
+        return importlib.import_module(module_name)
+    except ImportError as e:
+        logger.error("Failed to load agent '%s': %s", agent_name, e)
+        sys.exit(1)
 
 
-def process_pov(pov_path: Path, source_dir: Path) -> str | None:
-    """Process a single POV: reproduce crash, generate patches, build and verify."""
+def process_pov(pov_path: Path, source_dir: Path, agent) -> None:
+    """Process a single POV: reproduce crash, then hand off to agent."""
     pov_name = pov_path.stem
     logger.info("Processing POV: %s", pov_name)
 
     crash_log = reproduce_crash(pov_path)
     logger.info("Crash log:\n%s", crash_log)
 
-    failed_patches = ""
-    for i in range(MAX_ITERATIONS):
-        logger.info("Iteration %d/%d for %s", i + 1, MAX_ITERATIONS, pov_name)
+    _reset_source(source_dir)
 
-        patch_diff = generate_patch(source_dir, crash_log, failed_patches)
-        if not patch_diff:
-            logger.info("No patch generated in iteration %d", i + 1)
-            continue
+    pov_work_dir = WORK_DIR / f"pov-{pov_name}"
+    pov_work_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Generated patch (%d bytes)", len(patch_diff))
+    agent.run(source_dir, crash_log, pov_path, HARNESS, PATCHES_DIR, pov_work_dir,
+              language=LANGUAGE)
 
-        pov_work_dir = WORK_DIR / f"pov-{pov_name}" / f"iter-{i}"
-        failure_reason, success = build_and_verify(patch_diff, pov_path, pov_work_dir)
-
-        if success:
-            logger.info("Patch for %s verified!", pov_name)
-            return patch_diff
-
-        logger.info("Patch failed in iteration %d: %s", i + 1, failure_reason)
-        failed_patches += f"```diff\n{patch_diff}\n```\nFailed: {failure_reason}\n\n"
-
-    logger.info(
-        "Failed to generate valid patch for %s after %d iterations",
-        pov_name, MAX_ITERATIONS,
-    )
-    return None
+    _reset_source(source_dir)
 
 
 # --- Main loop ---
@@ -411,8 +162,8 @@ def process_pov(pov_path: Path, source_dir: Path) -> str | None:
 
 def main():
     logger.info(
-        "Starting patcher: target=%s harness=%s model=%s snapshot=%s",
-        TARGET, HARNESS, CLAUDE_MODEL, SNAPSHOT_IMAGE or "(none)",
+        "Starting patcher: target=%s harness=%s agent=%s snapshot=%s",
+        TARGET, HARNESS, CRS_AGENT, SNAPSHOT_IMAGE or "(none)",
     )
 
     if not SNAPSHOT_IMAGE:
@@ -421,10 +172,6 @@ def main():
         sys.exit(1)
 
     # Register patch submission directory with libCRS.
-    # register-submit-dir daemonizes via fork(): the parent prints the daemon PID
-    # and exits immediately, while the child runs the watcher forever.
-    # IMPORTANT: Do NOT use capture_output/PIPE — the daemon child inherits pipe
-    # FDs, keeping them open indefinitely, which blocks subprocess.run().
     PATCHES_DIR.mkdir(parents=True, exist_ok=True)
     submit_log = WORK_DIR / "register-submit-dir.log"
     submit_log.parent.mkdir(parents=True, exist_ok=True)
@@ -440,11 +187,9 @@ def main():
     logger.info("Patch submission watcher started (log=%s)", submit_log)
 
     # Register Claude Code logs as shared dir for post-run analysis.
-    # register-shared-dir creates a symlink: local_path → SHARED_DIR/shared_path
-    # so the local path must NOT exist beforehand.
     claude_log_dir = Path.home() / ".claude"
     if claude_log_dir.exists() and not claude_log_dir.is_symlink():
-        claude_log_dir.rmdir()  # remove empty dir if leftover
+        shutil.rmtree(claude_log_dir)
     result = subprocess.run(
         ["libCRS", "register-shared-dir", str(claude_log_dir), "claude-logs"],
         capture_output=True, text=True,
@@ -461,13 +206,19 @@ def main():
         sys.exit(1)
 
     logger.info("Source directory: %s", source_dir)
-    setup_agent(source_dir)
+
+    # Load and configure agent
+    agent = load_agent(CRS_AGENT)
+    agent.setup(source_dir, {
+        "llm_api_url": LLM_API_URL,
+        "llm_api_key": LLM_API_KEY,
+    })
 
     if not FETCH_DIR.exists():
         logger.error("FETCH_DIR %s does not exist. Is the volume mounted?", FETCH_DIR)
         sys.exit(1)
 
-    # Watch FETCH_DIR for POVs (read-only mount, track processed files in memory)
+    # Watch FETCH_DIR for POVs
     logger.info("Watching for POVs in %s...", FETCH_DIR)
     processed: set[str] = set()
     last_heartbeat = time.time()
@@ -488,14 +239,7 @@ def main():
 
         for pov_file in new_povs:
             processed.add(str(pov_file))
-
-            patch = process_pov(pov_file, source_dir)
-            if patch:
-                # Include extension to avoid stem collision (crash1.pov vs crash1.bin)
-                safe_name = f"{pov_file.stem}_{pov_file.suffix.lstrip('.')}"
-                patch_path = PATCHES_DIR / f"{safe_name}.diff"
-                patch_path.write_text(patch)
-                logger.info("Submitted patch: %s", patch_path)
+            process_pov(pov_file, source_dir, agent)
 
 
 if __name__ == "__main__":

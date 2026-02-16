@@ -17,6 +17,9 @@ FROM claude-code-base
 COPY --from=libcrs . /libCRS
 RUN /libCRS/install.sh
 
+COPY agents/ /usr/local/lib/agents/
 COPY bin/run_patcher /usr/local/bin/run_patcher
+
+ENV PYTHONPATH=/usr/local/lib
 
 CMD ["run_patcher"]

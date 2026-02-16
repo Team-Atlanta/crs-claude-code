@@ -5,12 +5,19 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
     git \
-    python3 \
     rsync \
     curl \
     ca-certificates \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# uv + Python (standalone, no system python3 needed)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+RUN uv python install 3.12 \
+    && UV_PYTHON=$(uv python find 3.12) \
+    && ln -s "$UV_PYTHON" /usr/local/bin/python3.12 \
+    && ln -s python3.12 /usr/local/bin/python3 \
+    && ln -s python3 /usr/local/bin/python
 
 # Docker CLI (not daemon — uses host socket)
 RUN install -m 0755 -d /etc/apt/keyrings \

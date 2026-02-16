@@ -1,0 +1,27 @@
+# Version control
+.git/
+
+# Claude Code local settings
+.claude/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Documentation (not needed in build)
+*.md
+
+# Environment files
+.env*
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Tags file
+tags

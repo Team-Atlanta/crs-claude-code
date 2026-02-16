@@ -18,11 +18,10 @@ crs_run_phase:
   patcher:
     dockerfile: oss-crs/patcher.Dockerfile
     additional_env:
-      # Switch models easily by changing this value:
-      #   claude-sonnet-4-20250514, claude-opus-4-20250514,
-      #   claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001
-      CLAUDE_MODEL: claude-sonnet-4-20250514
-      CLAUDE_MAX_ITERATIONS: "3"
+      # Default values. To override, set additional_env in compose yaml.
+      CRS_AGENT: claude_code
+      CLAUDE_MODEL: claude-sonnet-4-5-20250929
+      AGENT_TIMEOUT: "3600"
 
 supported_target:
   mode:
@@ -36,4 +35,9 @@ supported_target:
     - x86_64
 
 required_llms:
+  - claude-opus-4-6
+  - claude-opus-4-5-20251101
+  - claude-opus-4-1-20250805
+  - claude-sonnet-4-5-20250929
   - claude-sonnet-4-20250514
+  - claude-haiku-4-5-20251001
