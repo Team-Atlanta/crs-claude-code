@@ -24,16 +24,16 @@ Test a build against a POV:
   `libCRS run-pov <pov_path> <response_dir> --harness {harness} --build-id <build_id> --builder {builder_module}`
   - Runs a POV input against the patched binary.
   - `<response_dir>/pov_exit_code`: 0 = no crash (fix works), non-zero = still crashes, 124 = timeout.
-  - `<response_dir>/pov_stderr.log`: crash output if it still fails.
+  - `<response_dir>/pov_stderr.log`: stderr output from the POV run (crash details if it still fails, may be empty on success).
   - The unpatched binary is available as build ID `base` — use it with run-pov to reproduce the original crash.
 
 Run the project's test suite against a patched build:
   `libCRS run-test <response_dir> --build-id <build_id> --builder {builder_module}`
   - Runs the project's bundled test.sh (if it exists) with `$OUT` pointing to the build artifacts.
-  - `<response_dir>/test_exit_code`: 0 = tests pass (or skipped if no test.sh exists).
-  - `<response_dir>/test_stderr.log`: test output on failure.
+  - `<response_dir>/test_exit_code`: 0 = tests pass (or skipped if no test.sh exists), non-zero = failure, 124 = timeout.
+  - `<response_dir>/test_stderr.log`: test stderr output (present on success, failure, or skip).
 
-You can iterate freely: build, test, read the logs, refine your patch, and try again. There is no limit on build/test cycles. Build IDs are content-addressed — resubmitting the same patch reuses the prior result.
+You can iterate freely: build, test, read the logs, refine your patch, and try again. There is no limit on build/test cycles. Build IDs are content-addressed — resubmitting the same successful patch reuses the prior result. Failed builds are not cached and will be retried.
 
 ## Submission
 

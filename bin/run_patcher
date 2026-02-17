@@ -38,7 +38,6 @@ SANITIZER = os.environ.get("SANITIZER", "address")
 LLM_API_URL = os.environ.get("OSS_CRS_LLM_API_URL", "")
 LLM_API_KEY = os.environ.get("OSS_CRS_LLM_API_KEY", "")
 
-CRS_NAME = os.environ.get("OSS_CRS_NAME", "")
 BUILDER_MODULE = os.environ.get("BUILDER_MODULE", "inc-builder-asan")
 
 # Agent selection
@@ -100,42 +99,36 @@ def setup_source() -> Path | None:
     return project_dir
 
 
-def _resolve_builder_url() -> str:
-    """Resolve builder sidecar URL via libCRS get-service-domain."""
+def wait_for_builder(timeout: int = 300) -> bool:
+    """Block until the builder sidecar is healthy (safety net for startup races).
+
+    Resolves the builder module domain via ``libCRS get-service-domain`` and
+    polls the ``/health`` endpoint.
+    """
     result = subprocess.run(
         ["libCRS", "get-service-domain", BUILDER_MODULE],
         capture_output=True, text=True, timeout=30,
     )
-    if result.returncode == 0 and result.stdout.strip():
-        domain = result.stdout.strip()
-        return f"http://{domain}:8080"
-    # Fallback: construct from CRS_NAME
-    if CRS_NAME:
-        return f"http://{BUILDER_MODULE}.{CRS_NAME}:8080"
-    return ""
-
-
-def wait_for_builder(timeout: int = 300) -> bool:
-    """Block until the builder sidecar is healthy (safety net for startup races)."""
-    builder_url = _resolve_builder_url()
-    if not builder_url:
-        logger.error("Cannot resolve builder URL for '%s'", BUILDER_MODULE)
+    if result.returncode != 0:
+        logger.error("Failed to resolve builder domain for '%s': %s",
+                      BUILDER_MODULE, result.stderr)
         return False
 
-    health_url = f"{builder_url}/health"
-    logger.info("Waiting for builder sidecar at %s ...", health_url)
+    domain = result.stdout.strip()
+    health_url = f"http://{domain}:8080/health"
+    logger.info("Waiting for builder sidecar '%s' at %s ...", BUILDER_MODULE, health_url)
     start = time.monotonic()
     while time.monotonic() - start < timeout:
         try:
             with urllib.request.urlopen(health_url, timeout=5) as resp:
                 if resp.status == 200:
-                    logger.info("Builder sidecar is healthy")
+                    logger.info("Builder sidecar '%s' is healthy", BUILDER_MODULE)
                     return True
         except (urllib.error.URLError, OSError):
             pass
         time.sleep(5)
 
-    logger.error("Builder sidecar not healthy after %ds", timeout)
+    logger.error("Builder sidecar '%s' not healthy after %ds", BUILDER_MODULE, timeout)
     return False
 
 
@@ -275,7 +268,8 @@ def main():
     # Register diff fetch directory for delta mode (FETCH_DIR/diff/).
     result = subprocess.run(
         ["libCRS", "register-fetch-dir", "diff", str(DIFF_DIR)],
-        capture_output=True, text=True,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     if result.returncode != 0:
         logger.warning("register-fetch-dir diff failed (rc=%d) — delta mode diffs unavailable", result.returncode)
@@ -284,11 +278,16 @@ def main():
             if DIFF_DIR.exists():
                 break
             time.sleep(0.1)
-        logger.info("Diff fetch directory registered at %s", DIFF_DIR)
+        else:
+            logger.warning("DIFF_DIR %s not created after register-fetch-dir — delta mode diffs unavailable", DIFF_DIR)
+        if DIFF_DIR.exists():
+            logger.info("Diff fetch directory registered at %s", DIFF_DIR)
 
     # Register Claude Code logs as shared dir for post-run analysis.
     claude_log_dir = Path.home() / ".claude"
-    if claude_log_dir.exists() and not claude_log_dir.is_symlink():
+    if claude_log_dir.is_symlink():
+        claude_log_dir.unlink()
+    elif claude_log_dir.exists():
         shutil.rmtree(claude_log_dir)
     result = subprocess.run(
         ["libCRS", "register-shared-dir", str(claude_log_dir), "claude-logs"],
