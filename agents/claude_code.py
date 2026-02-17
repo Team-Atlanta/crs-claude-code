@@ -91,6 +91,7 @@ def run(
     work_dir: Path,
     language: str = "c",
     sanitizer: str = "address",
+    builder_module: str = "inc-builder-asan",
 ) -> bool:
     """Launch Claude Code in agentic mode to autonomously fix the vulnerability.
 
@@ -114,7 +115,7 @@ def run(
 
         pov_sections.append(
             f"- POV: `{pov_path}` — crash log: `{crash_log_path}`\n"
-            f"  Test: `libCRS run-pov {pov_path} <response_dir> --harness {harness} --build-id <build_id>`"
+            f"  Test: `libCRS run-pov {pov_path} <response_dir> --harness {harness} --build-id <build_id> --builder {builder_module}`"
         )
 
     pov_list = "\n".join(pov_sections)
@@ -128,6 +129,7 @@ def run(
         patches_dir=patches_dir,
         pov_list=pov_list,
         pov_count=len(povs),
+        builder_module=builder_module,
     )
     (source_dir / "CLAUDE.md").write_text(claude_md)
 

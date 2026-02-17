@@ -38,7 +38,8 @@ SANITIZER = os.environ.get("SANITIZER", "address")
 LLM_API_URL = os.environ.get("OSS_CRS_LLM_API_URL", "")
 LLM_API_KEY = os.environ.get("OSS_CRS_LLM_API_KEY", "")
 
-BUILDER_URL = os.environ.get("OSS_CRS_BUILDER_URL", "")
+CRS_NAME = os.environ.get("OSS_CRS_NAME", "")
+BUILDER_MODULE = os.environ.get("BUILDER_MODULE", "inc-builder-asan")
 
 # Agent selection
 CRS_AGENT = os.environ.get("CRS_AGENT", "claude_code")
@@ -47,9 +48,9 @@ CRS_AGENT = os.environ.get("CRS_AGENT", "claude_code")
 MAX_CRASH_LOG_CHARS = 16384
 
 # Framework directories
-FETCH_DIR = Path("/OSS_CRS_FETCH_DIR")
 WORK_DIR = Path("/work")
 PATCHES_DIR = Path("/patches")
+POV_DIR = WORK_DIR / "povs"
 
 
 # --- Common infrastructure ---
@@ -98,13 +99,29 @@ def setup_source() -> Path | None:
     return project_dir
 
 
+def _resolve_builder_url() -> str:
+    """Resolve builder sidecar URL via libCRS get-service-domain."""
+    result = subprocess.run(
+        ["libCRS", "get-service-domain", BUILDER_MODULE],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        domain = result.stdout.strip()
+        return f"http://{domain}:8080"
+    # Fallback: construct from CRS_NAME
+    if CRS_NAME:
+        return f"http://{BUILDER_MODULE}.{CRS_NAME}:8080"
+    return ""
+
+
 def wait_for_builder(timeout: int = 300) -> bool:
     """Block until the builder sidecar is healthy (safety net for startup races)."""
-    if not BUILDER_URL:
-        logger.warning("OSS_CRS_BUILDER_URL not set, skipping health check")
+    builder_url = _resolve_builder_url()
+    if not builder_url:
+        logger.warning("Cannot resolve builder URL, skipping health check")
         return True
 
-    health_url = f"{BUILDER_URL}/health"
+    health_url = f"{builder_url}/health"
     logger.info("Waiting for builder sidecar at %s ...", health_url)
     start = time.monotonic()
     while time.monotonic() - start < timeout:
@@ -134,6 +151,7 @@ def reproduce_crash(pov_path: Path) -> str:
         str(pov_path), str(response_dir),
         "--harness", HARNESS,
         "--build-id", "base",
+        "--builder", BUILDER_MODULE,
     ]
 
     try:
@@ -188,7 +206,8 @@ def process_povs(pov_paths: list[Path], source_dir: Path, agent) -> bool:
     agent_work_dir.mkdir(parents=True, exist_ok=True)
 
     agent.run(source_dir, povs, HARNESS, PATCHES_DIR, agent_work_dir,
-              language=LANGUAGE, sanitizer=SANITIZER)
+              language=LANGUAGE, sanitizer=SANITIZER,
+              builder_module=BUILDER_MODULE)
 
     _reset_source(source_dir)
 
@@ -230,6 +249,27 @@ def main():
         sys.exit(1)
     logger.info("Patch submission watcher started (log=%s)", submit_log)
 
+    # Register POV fetch directory with libCRS (symlink POV_DIR → FETCH_DIR/pov/).
+    fetch_log = WORK_DIR / "register-fetch-dir.log"
+    result = subprocess.run(
+        ["libCRS", "register-fetch-dir", "--log", str(fetch_log),
+         "pov", str(POV_DIR)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        logger.error("register-fetch-dir failed (rc=%d)", result.returncode)
+        sys.exit(1)
+    # Wait for daemon child to create the symlink.
+    for _ in range(50):
+        if POV_DIR.exists():
+            break
+        time.sleep(0.1)
+    else:
+        logger.error("POV_DIR %s not created after register-fetch-dir", POV_DIR)
+        sys.exit(1)
+    logger.info("POV fetch directory registered at %s", POV_DIR)
+
     # Register Claude Code logs as shared dir for post-run analysis.
     claude_log_dir = Path.home() / ".claude"
     if claude_log_dir.exists() and not claude_log_dir.is_symlink():
@@ -258,16 +298,12 @@ def main():
         "llm_api_key": LLM_API_KEY,
     })
 
-    if not FETCH_DIR.exists():
-        logger.error("FETCH_DIR %s does not exist. Is the volume mounted?", FETCH_DIR)
-        sys.exit(1)
-
-    # All POVs are present before container starts (FETCH_DIR is read-only).
+    # All POVs are present before container starts (POV_DIR → FETCH_DIR/pov/).
     # Scan once, batch all variants into a single agent session.
-    pov_files = sorted(f for f in FETCH_DIR.rglob("*") if f.is_file() and not f.name.startswith("."))
+    pov_files = sorted(f for f in POV_DIR.rglob("*") if f.is_file() and not f.name.startswith("."))
 
     if not pov_files:
-        logger.warning("No POV files found in %s", FETCH_DIR)
+        logger.warning("No POV files found in %s", POV_DIR)
         sys.exit(0)
 
     logger.info("Found %d POV(s): %s", len(pov_files), [p.name for p in pov_files])

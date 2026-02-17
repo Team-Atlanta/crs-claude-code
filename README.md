@@ -122,7 +122,7 @@ The agent receives:
 - **language** — target language (c, c++, java)
 - **sanitizer** — sanitizer type (address, memory, undefined)
 
-The agent has access to three libCRS commands:
-- `libCRS apply-patch-build <patch.diff> <response_dir>` — build a patch
-- `libCRS run-pov <pov> <response_dir> --harness <h> --build-id <id>` — test against a POV
-- `libCRS run-test <response_dir> --build-id <id>` — run the project's test suite
+The agent has access to three libCRS commands (the `--builder` flag specifies which builder sidecar module to use):
+- `libCRS apply-patch-build <patch.diff> <response_dir> --builder <module>` — build a patch
+- `libCRS run-pov <pov> <response_dir> --harness <h> --build-id <id> --builder <module>` — test against a POV
+- `libCRS run-test <response_dir> --build-id <id> --builder <module>` — run the project's test suite

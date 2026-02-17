@@ -25,6 +25,7 @@ def run(
     work_dir: Path,
     language: str = "c",
     sanitizer: str = "address",
+    builder_module: str = "inc-builder-asan",
 ) -> bool:
     """Run the agent autonomously.
 
