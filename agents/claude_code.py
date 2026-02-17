@@ -92,6 +92,7 @@ def run(
     language: str = "c",
     sanitizer: str = "address",
     builder_module: str = "inc-builder-asan",
+    ref_diff: str | None = None,
 ) -> bool:
     """Launch Claude Code in agentic mode to autonomously fix the vulnerability.
 
@@ -120,6 +121,16 @@ def run(
 
     pov_list = "\n".join(pov_sections)
 
+    # Build optional diff section for delta mode
+    if ref_diff:
+        diff_section = (
+            "\n## Reference Diff (Delta Mode)\n\n"
+            "This diff shows the code change that introduced the vulnerability:\n\n"
+            f"```diff\n{ref_diff}\n```\n"
+        )
+    else:
+        diff_section = ""
+
     # Write CLAUDE.md with concrete paths for all POVs
     claude_md = CLAUDE_MD_TEMPLATE.format(
         language=language,
@@ -130,6 +141,7 @@ def run(
         pov_list=pov_list,
         pov_count=len(povs),
         builder_module=builder_module,
+        diff_section=diff_section,
     )
     (source_dir / "CLAUDE.md").write_text(claude_md)
 

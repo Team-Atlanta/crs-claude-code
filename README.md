@@ -119,8 +119,10 @@ The agent receives:
 - **harness** — harness name for `run-pov`
 - **patches_dir** — write verified `.diff` files here
 - **work_dir** — scratch space
-- **language** — target language (c, c++, java)
+- **language** — target language (c, c++, jvm)
 - **sanitizer** — sanitizer type (address, memory, undefined)
+- **builder_module** — builder sidecar module name (default: `inc-builder-asan`)
+- **ref_diff** — reference diff showing the bug-introducing change (delta mode only, None in full mode)
 
 The agent has access to three libCRS commands (the `--builder` flag specifies which builder sidecar module to use):
 - `libCRS apply-patch-build <patch.diff> <response_dir> --builder <module>` — build a patch

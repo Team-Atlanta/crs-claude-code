@@ -10,7 +10,7 @@ There are {pov_count} proof-of-vulnerability input(s) that trigger the same unde
 {pov_list}
 
 Your patch must fix all variants — verify against every POV before submitting.
-
+{diff_section}
 ## Tools
 
 Build a patch:
@@ -18,13 +18,14 @@ Build a patch:
   - Applies the diff to a clean copy of the source and compiles.
   - `<response_dir>/build_exit_code`: 0 = success.
   - `<response_dir>/build_id`: the build ID (use with run-pov/run-test).
-  - `<response_dir>/build.log`: compiler output on failure.
+  - `<response_dir>/build.log`: compiler or patch-apply error output.
 
 Test a build against a POV:
   `libCRS run-pov <pov_path> <response_dir> --harness {harness} --build-id <build_id> --builder {builder_module}`
   - Runs a POV input against the patched binary.
-  - `<response_dir>/pov_exit_code`: 0 = no crash (fix works), non-zero = still crashes.
+  - `<response_dir>/pov_exit_code`: 0 = no crash (fix works), non-zero = still crashes, 124 = timeout.
   - `<response_dir>/pov_stderr.log`: crash output if it still fails.
+  - The unpatched binary is available as build ID `base` — use it with run-pov to reproduce the original crash.
 
 Run the project's test suite against a patched build:
   `libCRS run-test <response_dir> --build-id <build_id> --builder {builder_module}`
@@ -32,15 +33,20 @@ Run the project's test suite against a patched build:
   - `<response_dir>/test_exit_code`: 0 = tests pass (or skipped if no test.sh exists).
   - `<response_dir>/test_stderr.log`: test output on failure.
 
+You can iterate freely: build, test, read the logs, refine your patch, and try again. There is no limit on build/test cycles. Build IDs are content-addressed — resubmitting the same patch reuses the prior result.
+
 ## Submission
 
-Submit exactly **one** verified .diff to `{patches_dir}/`. A daemon watches that directory and submits automatically.
-Only submit a patch that meets **all** of the following — broken patches incur a penalty:
+Drop your verified .diff into `{patches_dir}/`. A daemon watches that directory and submits automatically.
+
+An ideal patch meets all of these criteria:
 
 1. **Builds** — `build_exit_code` is 0
 2. **POVs don't crash** — `pov_exit_code` is 0 for every POV variant
 3. **Tests pass** — `test_exit_code` is 0 (tests pass or skipped if no test.sh exists)
-4. **Semantically correct** — fix the root cause with a minimal patch
+4. **Semantically correct** — fixes the root cause with a targeted patch
+
+Broken patches incur a scoring penalty, so verify before submitting. If you cannot achieve all four, prioritize in order: build success > POV fix > test pass.
 
 ## Context
 

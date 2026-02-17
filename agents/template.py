@@ -26,6 +26,7 @@ def run(
     language: str = "c",
     sanitizer: str = "address",
     builder_module: str = "inc-builder-asan",
+    ref_diff: str | None = None,
 ) -> bool:
     """Run the agent autonomously.
 
