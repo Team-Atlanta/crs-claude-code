@@ -81,12 +81,13 @@ crs-compose up -f crs-compose.yaml
 | Environment variable | Default | Description |
 |---|---|---|
 | `CRS_AGENT` | `claude_code` | Agent module name (maps to `agents/<name>.py`) |
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-5-20250929` | Primary Claude model (also passed via `--model`) |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-5-20250929` | Primary Claude model (picked up from environment) |
 | `CLAUDE_CODE_SUBAGENT_MODEL` | `claude-sonnet-4-5-20250929` | Model for Claude Code subagents |
 | `ANTHROPIC_DEFAULT_OPUS_MODEL` | `claude-sonnet-4-5-20250929` | Model the "opus" alias maps to |
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | `claude-sonnet-4-5-20250929` | Model the "sonnet" alias maps to |
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `claude-sonnet-4-5-20250929` | Model the "haiku" alias maps to |
 | `AGENT_TIMEOUT` | `0` (no limit) | Agent timeout in seconds (0 = run until budget exhausted) |
+| `BUILDER_MODULE` | `inc-builder-asan` | Builder sidecar module name (must match a `use_snapshot` entry in crs.yaml) |
 
 All model env vars are set to the same value by default for consistent benchmarking. These are standard Claude Code env vars — set them to different models in `additional_env` if you want mixed-model runs.
 
