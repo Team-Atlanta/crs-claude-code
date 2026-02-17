@@ -42,9 +42,8 @@ oss-crs/
 ## Prerequisites
 
 - **[oss-crs](https://github.com/oss-crs/oss-crs)** — the CRS framework (`crs-compose` CLI)
-- **[oss-crs-builder](https://github.com/oss-crs/builder)** — builder sidecar that handles compilation and test execution
 
-Set up both by following their respective READMEs before proceeding.
+Builder sidecars for incremental builds are declared in `oss-crs/crs.yaml` (`snapshot: true` / `use_snapshot: true`) and handled automatically by the framework — no separate builder setup is needed.
 
 ## Quick start
 

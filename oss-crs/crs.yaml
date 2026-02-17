@@ -13,6 +13,11 @@ target_build_phase:
     outputs:
       - build
       - src
+  - name: inc-builder-asan
+    snapshot: true
+    dockerfile: oss-crs-infra:default-builder
+    additional_env:
+      SANITIZER: address
 
 crs_run_phase:
   patcher:
@@ -26,6 +31,9 @@ crs_run_phase:
       # ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-4-5-20250929
       # ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-sonnet-4-5-20250929
       # AGENT_TIMEOUT: "0"  # seconds, 0 = no limit (default)
+  inc-builder-asan:
+    use_snapshot: true
+    dockerfile: oss-crs-infra:default-builder
 
 supported_target:
   mode:
