@@ -1,4 +1,4 @@
-# atlantis-claude-code
+# crs-claude-code
 
 A [CRS](https://github.com/oss-crs) (Cyber Reasoning System) that uses [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to autonomously find and patch vulnerabilities in open-source projects.
 
@@ -52,7 +52,7 @@ Builder sidecars for incremental builds are declared in `oss-crs/crs.yaml` (`sna
 Copy `oss-crs/example-compose.yaml` and update the paths:
 
 ```yaml
-atlantis-claude-code:
+crs-claude-code:
   source:
     local_path: /path/to/crs-claude-code
   cpuset: "2-7"

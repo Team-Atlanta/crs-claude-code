@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-atlantis-claude-code patcher module.
+crs-claude-code patcher module.
 
 Thin launcher that delegates vulnerability fixing to a swappable AI agent.
 The agent (selected via CRS_AGENT env var) handles: bug analysis, code editing,

@@ -1,5 +1,5 @@
 # =============================================================================
-# atlantis-claude-code Docker Bake Configuration
+# crs-claude-code Docker Bake Configuration
 # =============================================================================
 #
 # Builds the CRS base image with Claude Code CLI and Python dependencies.

@@ -1,5 +1,5 @@
 # =============================================================================
-# atlantis-claude-code Builder Dockerfile
+# crs-claude-code Builder Dockerfile
 # =============================================================================
 # BUILD phase: Compiles the target project and submits build outputs.
 # =============================================================================

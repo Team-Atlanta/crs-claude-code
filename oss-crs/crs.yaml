@@ -1,8 +1,8 @@
-name: atlantis-claude-code
+name: crs-claude-code
 type:
   - bug-fixing
 version: 1.0.0
-docker_registry: ghcr.io/team-atlanta/atlantis-claude-code
+docker_registry: ghcr.io/team-atlanta/crs-claude-code
 
 prepare_phase:
   hcl: oss-crs/docker-bake.hcl

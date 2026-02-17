@@ -1,6 +1,6 @@
 ##############################################################################
 #                        CRS Compose Configuration                           #
-#              Example for atlantis-claude-code                              #
+#              Example for crs-claude-code                              #
 ##############################################################################
 
 # --- General Settings -------------------------------------------------------
@@ -12,10 +12,10 @@ oss_crs_infra:
   cpuset: "0-1"
   memory: "8G"
 
-# --- CRS (atlantis-claude-code) ---------------------------------------------
+# --- CRS (crs-claude-code) ---------------------------------------------
 # Builder sidecars are declared in crs.yaml (snapshot: true / use_snapshot: true)
 # and handled automatically by the framework — no separate entry needed.
-atlantis-claude-code:
+crs-claude-code:
   source:
     local_path: /path/to/crs-claude-code            # UPDATE: local filesystem path
   cpuset: "2-7"                                     # UPDATE: available CPU cores

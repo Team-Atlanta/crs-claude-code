@@ -1,5 +1,5 @@
 # =============================================================================
-# atlantis-claude-code Patcher Module
+# crs-claude-code Patcher Module
 # =============================================================================
 # RUN phase: Receives POVs, generates patches using Claude Code,
 # tests them using the snapshot image for incremental rebuilds.
