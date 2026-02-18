@@ -108,11 +108,9 @@ def run(
 
     # Write each crash log to a file and build POV sections for CLAUDE.md
     pov_sections = []
-    crash_log_paths = []
     for i, (pov_path, crash_log) in enumerate(povs):
         crash_log_path = work_dir / f"crash_log_{i}.txt"
         crash_log_path.write_text(crash_log)
-        crash_log_paths.append(crash_log_path)
         logger.info("Wrote crash log to %s", crash_log_path)
 
         pov_sections.append(
