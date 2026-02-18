@@ -22,8 +22,9 @@ The agent is language-agnostic — it edits source and generates diffs while the
 ## Project structure
 
 ```
+patcher.py             # Patcher module: scan POVs → agent
+pyproject.toml         # Package config (run_patcher entry point)
 bin/
-  run_patcher          # Thin launcher: scan POVs → agent
   compile_target       # Builder phase: compiles the target project
 agents/
   claude_code.py       # Claude Code agent (default)
@@ -122,7 +123,7 @@ The agent receives:
 - **work_dir** — scratch space
 - **language** — target language (c, c++, jvm)
 - **sanitizer** — sanitizer type (address, memory, undefined)
-- **builder_module** — builder sidecar module name (default: `inc-builder-asan`)
+- **builder** — builder sidecar module name (keyword-only, required)
 - **ref_diff** — reference diff showing the bug-introducing change (delta mode only, None in full mode)
 
 The agent has access to three libCRS commands (the `--builder` flag specifies which builder sidecar module to use):

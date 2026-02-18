@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 crs-claude-code patcher module.
 
@@ -16,10 +15,12 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
-import urllib.request
-import urllib.error
 from pathlib import Path
+
+from libCRS.base import DataType
+from libCRS.cli.main import init_crs_utils
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,6 +53,9 @@ PATCHES_DIR = Path("/patches")
 POV_DIR = WORK_DIR / "povs"
 DIFF_DIR = WORK_DIR / "diffs"
 
+# CRS utils instance (initialized in main())
+crs = None
+
 
 # --- Common infrastructure ---
 
@@ -77,12 +81,10 @@ def setup_source() -> Path | None:
     source_dir = WORK_DIR / "src"
     source_dir.mkdir(parents=True, exist_ok=True)
 
-    result = subprocess.run(
-        ["libCRS", "download-build-output", "src", str(source_dir)],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        logger.error("Failed to download source: %s", result.stderr)
+    try:
+        crs.download_build_output("src", source_dir)
+    except Exception as e:
+        logger.error("Failed to download source: %s", e)
         return None
 
     project_dir = source_dir / "repo"
@@ -99,37 +101,21 @@ def setup_source() -> Path | None:
     return project_dir
 
 
-def wait_for_builder(timeout: int = 300) -> bool:
-    """Block until the builder sidecar is healthy (safety net for startup races).
+def wait_for_builder() -> bool:
+    """Fail-fast DNS check for the builder sidecar.
 
-    Resolves the builder module domain via ``libCRS get-service-domain`` and
-    polls the ``/health`` endpoint.
+    Full health polling is handled internally by ``crs.run_pov()`` /
+    ``crs.apply_patch_build()`` (via ``_wait_for_builder_health``), so we
+    only verify DNS resolution here to catch configuration errors early.
     """
-    result = subprocess.run(
-        ["libCRS", "get-service-domain", BUILDER_MODULE],
-        capture_output=True, text=True, timeout=30,
-    )
-    if result.returncode != 0:
+    try:
+        domain = crs.get_service_domain(BUILDER_MODULE)
+        logger.info("Builder sidecar '%s' resolved to %s", BUILDER_MODULE, domain)
+        return True
+    except RuntimeError as e:
         logger.error("Failed to resolve builder domain for '%s': %s",
-                      BUILDER_MODULE, result.stderr)
+                      BUILDER_MODULE, e)
         return False
-
-    domain = result.stdout.strip()
-    health_url = f"http://{domain}:8080/health"
-    logger.info("Waiting for builder sidecar '%s' at %s ...", BUILDER_MODULE, health_url)
-    start = time.monotonic()
-    while time.monotonic() - start < timeout:
-        try:
-            with urllib.request.urlopen(health_url, timeout=5) as resp:
-                if resp.status == 200:
-                    logger.info("Builder sidecar '%s' is healthy", BUILDER_MODULE)
-                    return True
-        except (urllib.error.URLError, OSError):
-            pass
-        time.sleep(5)
-
-    logger.error("Builder sidecar '%s' not healthy after %ds", BUILDER_MODULE, timeout)
-    return False
 
 
 def reproduce_crash(pov_path: Path) -> str:
@@ -140,19 +126,9 @@ def reproduce_crash(pov_path: Path) -> str:
     response_dir = WORK_DIR / f"pov-{pov_path.stem}" / "reproduce"
     response_dir.mkdir(parents=True, exist_ok=True)
 
-    pov_cmd = [
-        "libCRS", "run-pov",
-        str(pov_path), str(response_dir),
-        "--harness", HARNESS,
-        "--build-id", "base",
-        "--builder", BUILDER_MODULE,
-    ]
-
     try:
-        result = subprocess.run(
-            pov_cmd, capture_output=True, text=True, timeout=180,
-        )
-        logger.info("reproduce_crash run-pov exit code: %d", result.returncode)
+        exit_code = crs.run_pov(pov_path, HARNESS, "base", response_dir, BUILDER_MODULE)
+        logger.info("reproduce_crash run-pov exit code: %d", exit_code)
 
         pov_stderr = response_dir / "pov_stderr.log"
         if pov_stderr.exists():
@@ -161,9 +137,7 @@ def reproduce_crash(pov_path: Path) -> str:
                 log = "[...truncated...]\n" + log[-MAX_CRASH_LOG_CHARS:]
             return log
 
-        return result.stdout or result.stderr or "No crash output captured"
-    except subprocess.TimeoutExpired:
-        return "Crash reproduction timed out (180s)"
+        return "No crash output captured"
     except Exception as e:
         return f"Error reproducing crash: {e}"
 
@@ -202,7 +176,7 @@ def process_povs(pov_paths: list[Path], source_dir: Path, agent,
 
     agent.run(source_dir, povs, HARNESS, PATCHES_DIR, agent_work_dir,
               language=LANGUAGE, sanitizer=SANITIZER,
-              builder_module=BUILDER_MODULE, ref_diff=ref_diff)
+              builder=BUILDER_MODULE, ref_diff=ref_diff)
 
     _reset_source(source_dir)
 
@@ -229,59 +203,29 @@ def main():
         logger.error("Declare 'snapshot: true' in target_build_phase and 'use_snapshot: true' in crs_run_phase (crs.yaml).")
         sys.exit(1)
 
-    # Register patch submission directory with libCRS.
+    global crs
+    crs = init_crs_utils()
+
+    # Register patch submission directory (daemon thread — blocks forever).
     PATCHES_DIR.mkdir(parents=True, exist_ok=True)
-    submit_log = WORK_DIR / "register-submit-dir.log"
-    submit_log.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["libCRS", "register-submit-dir", "--log", str(submit_log),
-         "patch", str(PATCHES_DIR)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    if result.returncode != 0:
-        logger.error("register-submit-dir failed (rc=%d)", result.returncode)
-        sys.exit(1)
-    logger.info("Patch submission watcher started (log=%s)", submit_log)
+    threading.Thread(
+        target=crs.register_submit_dir,
+        args=(DataType.PATCH, PATCHES_DIR),
+        daemon=True,
+    ).start()
+    logger.info("Patch submission watcher started")
 
-    # Register POV fetch directory with libCRS (symlink POV_DIR → FETCH_DIR/pov/).
-    fetch_log = WORK_DIR / "register-fetch-dir.log"
-    result = subprocess.run(
-        ["libCRS", "register-fetch-dir", "--log", str(fetch_log),
-         "pov", str(POV_DIR)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    if result.returncode != 0:
-        logger.error("register-fetch-dir failed (rc=%d)", result.returncode)
-        sys.exit(1)
-    # Wait for daemon child to create the symlink.
-    for _ in range(50):
-        if POV_DIR.exists():
-            break
-        time.sleep(0.1)
-    else:
-        logger.error("POV_DIR %s not created after register-fetch-dir", POV_DIR)
-        sys.exit(1)
-    logger.info("POV fetch directory registered at %s", POV_DIR)
+    # Fetch POV files (one-shot — all POVs are present before container starts).
+    pov_files_fetched = crs.fetch(DataType.POV, POV_DIR)
+    logger.info("Fetched %d POV file(s) into %s", len(pov_files_fetched), POV_DIR)
 
-    # Register diff fetch directory for delta mode (FETCH_DIR/diff/).
-    result = subprocess.run(
-        ["libCRS", "register-fetch-dir", "diff", str(DIFF_DIR)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    if result.returncode != 0:
-        logger.warning("register-fetch-dir diff failed (rc=%d) — delta mode diffs unavailable", result.returncode)
-    else:
-        for _ in range(50):
-            if DIFF_DIR.exists():
-                break
-            time.sleep(0.1)
-        else:
-            logger.warning("DIFF_DIR %s not created after register-fetch-dir — delta mode diffs unavailable", DIFF_DIR)
-        if DIFF_DIR.exists():
-            logger.info("Diff fetch directory registered at %s", DIFF_DIR)
+    # Fetch diff files for delta mode (one-shot, optional).
+    try:
+        diff_files_fetched = crs.fetch(DataType.DIFF, DIFF_DIR)
+        if diff_files_fetched:
+            logger.info("Fetched %d diff file(s) into %s", len(diff_files_fetched), DIFF_DIR)
+    except Exception as e:
+        logger.warning("Diff fetch failed: %s — delta mode diffs unavailable", e)
 
     # Register Claude Code logs as shared dir for post-run analysis.
     claude_log_dir = Path.home() / ".claude"
@@ -289,15 +233,12 @@ def main():
         claude_log_dir.unlink()
     elif claude_log_dir.exists():
         shutil.rmtree(claude_log_dir)
-    result = subprocess.run(
-        ["libCRS", "register-shared-dir", str(claude_log_dir), "claude-logs"],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        logger.warning("Failed to register claude-logs shared dir: %s", result.stderr)
-        claude_log_dir.mkdir(parents=True, exist_ok=True)
-    else:
+    try:
+        crs.register_shared_dir(claude_log_dir, "claude-logs")
         logger.info("Claude Code logs shared at %s", claude_log_dir)
+    except Exception as e:
+        logger.warning("Failed to register claude-logs shared dir: %s", e)
+        claude_log_dir.mkdir(parents=True, exist_ok=True)
 
     source_dir = setup_source()
     if source_dir is None:

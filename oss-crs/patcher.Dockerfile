@@ -13,13 +13,15 @@ ARG crs_version
 
 FROM claude-code-base
 
-# Install libCRS
+# Install libCRS (CLI + Python package)
 COPY --from=libcrs . /libCRS
-RUN /libCRS/install.sh
+RUN pip3 install /libCRS \
+    && python3 -c "from libCRS.base import DataType; print('libCRS OK')"
 
-COPY agents/ /usr/local/lib/agents/
-COPY bin/run_patcher /usr/local/bin/run_patcher
-
-ENV PYTHONPATH=/usr/local/lib
+# Install crs-claude-code package (patcher + agents)
+COPY pyproject.toml /opt/crs-claude-code/pyproject.toml
+COPY patcher.py /opt/crs-claude-code/patcher.py
+COPY agents/ /opt/crs-claude-code/agents/
+RUN pip3 install /opt/crs-claude-code
 
 CMD ["run_patcher"]

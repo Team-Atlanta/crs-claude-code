@@ -9,15 +9,17 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     gnupg \
+    software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
-# uv + Python (standalone, no system python3 needed)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-RUN uv python install 3.12 \
-    && UV_PYTHON=$(uv python find 3.12) \
-    && ln -s "$UV_PYTHON" /usr/local/bin/python3.12 \
-    && ln -s python3.12 /usr/local/bin/python3 \
-    && ln -s python3 /usr/local/bin/python
+# Python 3.12 (deadsnakes PPA)
+RUN add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
+    python3.12 python3.12-venv python3.12-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 \
+    && ln -sf python3 /usr/bin/python
 
 # Docker CLI (not daemon — uses host socket)
 RUN install -m 0755 -d /etc/apt/keyrings \

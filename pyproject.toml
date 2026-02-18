@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crs-claude-code"
+version = "1.0.0"
+description = "CRS using Claude Code CLI for autonomous vulnerability patching"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+run_patcher = "patcher:main"
+
+[tool.setuptools]
+py-modules = ["patcher"]
+
+[tool.setuptools.packages.find]
+include = ["agents", "agents.*"]
+
+[tool.setuptools.package-data]
+agents = ["*.md"]

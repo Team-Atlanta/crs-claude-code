@@ -89,9 +89,10 @@ def run(
     harness: str,
     patches_dir: Path,
     work_dir: Path,
+    *,
     language: str = "c",
     sanitizer: str = "address",
-    builder_module: str = "inc-builder-asan",
+    builder: str,
     ref_diff: str | None = None,
 ) -> bool:
     """Launch Claude Code in agentic mode to autonomously fix the vulnerability.
@@ -116,7 +117,7 @@ def run(
 
         pov_sections.append(
             f"- POV: `{pov_path}` — crash log: `{crash_log_path}`\n"
-            f"  Test: `libCRS run-pov {pov_path} <response_dir> --harness {harness} --build-id <build_id> --builder {builder_module}`"
+            f"  Test: `libCRS run-pov {pov_path} <response_dir> --harness {harness} --build-id <build_id> --builder {builder}`"
         )
 
     pov_list = "\n".join(pov_sections)
@@ -140,7 +141,7 @@ def run(
         patches_dir=patches_dir,
         pov_list=pov_list,
         pov_count=len(povs),
-        builder_module=builder_module,
+        builder=builder,
         diff_section=diff_section,
     )
     (source_dir / "CLAUDE.md").write_text(claude_md)
@@ -182,9 +183,12 @@ def run(
                 logger.info("Claude Code exit code: %d", proc.returncode)
             except subprocess.TimeoutExpired:
                 logger.warning("Claude Code timed out (%ds), killing process tree", AGENT_TIMEOUT)
-                os.killpg(proc.pid, signal.SIGTERM)
-                time.sleep(2)
-                os.killpg(proc.pid, signal.SIGKILL)
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    time.sleep(2)
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 proc.wait()
     except Exception as e:
         logger.error("Error running Claude Code: %s", e)

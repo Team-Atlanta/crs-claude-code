@@ -10,7 +10,9 @@ __pycache__/
 *.pyo
 
 # Documentation (not needed in build)
-*.md
+README.md
+
+# Keep agents/*.md — they are CLAUDE.md templates used at runtime
 
 # Environment files
 .env*
