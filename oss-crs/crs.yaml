@@ -32,7 +32,7 @@ crs_run_phase:
       # ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-sonnet-4-5-20250929
       # AGENT_TIMEOUT: "0"  # seconds, 0 = no limit (default)
   inc-builder-asan:
-    use_snapshot: true
+    run_snapshot: true
     dockerfile: oss-crs-infra:default-builder
 
 supported_target:

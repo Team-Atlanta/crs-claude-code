@@ -44,7 +44,7 @@ oss-crs/
 
 - **[oss-crs](https://github.com/oss-crs/oss-crs)** — the CRS framework (`crs-compose` CLI)
 
-Builder sidecars for incremental builds are declared in `oss-crs/crs.yaml` (`snapshot: true` / `use_snapshot: true`) and handled automatically by the framework — no separate builder setup is needed.
+Builder sidecars for incremental builds are declared in `oss-crs/crs.yaml` (`snapshot: true` / `run_snapshot: true`) and handled automatically by the framework — no separate builder setup is needed.
 
 ## Quick start
 
@@ -88,7 +88,7 @@ crs-compose up -f crs-compose.yaml
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | `claude-sonnet-4-5-20250929` | Model the "sonnet" alias maps to |
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `claude-sonnet-4-5-20250929` | Model the "haiku" alias maps to |
 | `AGENT_TIMEOUT` | `0` (no limit) | Agent timeout in seconds (0 = run until budget exhausted) |
-| `BUILDER_MODULE` | `inc-builder-asan` | Builder sidecar module name (must match a `use_snapshot` entry in crs.yaml) |
+| `BUILDER_MODULE` | `inc-builder-asan` | Builder sidecar module name (must match a `run_snapshot` entry in crs.yaml) |
 
 All model env vars are set to the same value by default for consistent benchmarking. These are standard Claude Code env vars — set them to different models in `additional_env` if you want mixed-model runs.
 

@@ -13,7 +13,7 @@ oss_crs_infra:
   memory: "8G"
 
 # --- CRS (crs-claude-code) ---------------------------------------------
-# Builder sidecars are declared in crs.yaml (snapshot: true / use_snapshot: true)
+# Builder sidecars are declared in crs.yaml (snapshot: true / run_snapshot: true)
 # and handled automatically by the framework — no separate entry needed.
 crs-claude-code:
   source:

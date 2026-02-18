@@ -200,7 +200,7 @@ def main():
 
     if not SNAPSHOT_IMAGE:
         logger.error("OSS_CRS_SNAPSHOT_IMAGE is not set.")
-        logger.error("Declare 'snapshot: true' in target_build_phase and 'use_snapshot: true' in crs_run_phase (crs.yaml).")
+        logger.error("Declare 'snapshot: true' in target_build_phase and 'run_snapshot: true' in crs_run_phase (crs.yaml).")
         sys.exit(1)
 
     global crs
