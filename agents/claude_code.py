@@ -192,6 +192,13 @@ def run(
         logger.error("Error running Claude Code: %s", e)
         return False
 
+    # Make chat history group-readable for post-run analysis.
+    # Claude Code creates files with mode 0o600; fix after exit.
+    subprocess.run(
+        ["chmod", "-R", "og+rX", str(Path.home() / ".claude")],
+        capture_output=True,
+    )
+
     if proc.returncode != 0:
         logger.warning("Claude Code failed (rc=%d), see %s", proc.returncode, stderr_log)
 
