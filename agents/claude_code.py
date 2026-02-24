@@ -122,9 +122,18 @@ def run(
 
     # Build optional diff section for delta mode
     if ref_diff:
+        # Extract changed file list from diff headers
+        changed_files = [
+            line.split("b/", 1)[1]
+            for line in ref_diff.splitlines()
+            if line.startswith("+++ b/")
+        ]
+        changed_files_str = ", ".join(f"`{f}`" for f in changed_files) if changed_files else "(see diff)"
         diff_section = (
             "\n## Reference Diff (Delta Mode)\n\n"
-            "This diff shows the code change that introduced the vulnerability:\n\n"
+            "This diff shows the change that introduced the vulnerability.\n"
+            "Fix the flaw in this change — don't blindly revert it.\n\n"
+            f"Changed files: {changed_files_str}\n\n"
             f"```diff\n{ref_diff}\n```\n"
         )
     else:
@@ -144,14 +153,34 @@ def run(
     )
     (source_dir / "CLAUDE.md").write_text(claude_md)
 
+    # Include the tail of the first crash log inline so the agent can start
+    # reasoning about the vulnerability immediately without a file-read call.
+    first_crash_tail = povs[0][1][-2000:] if povs else ""
+    target = os.environ.get("OSS_CRS_TARGET", source_dir.name)
     prompt = (
-        f"Fix the vulnerability. There are {len(povs)} POV variant(s) — "
-        f"crash logs are in {work_dir}/crash_log_*.txt. See CLAUDE.md for tools and POV details."
+        f"Fix the {sanitizer} vulnerability in project `{target}` "
+        f"(harness: `{harness}`). {len(povs)} POV variant(s).\n\n"
+        f"First crash log tail:\n```\n{first_crash_tail}\n```\n\n"
+        f"Full crash logs: {work_dir}/crash_log_*.txt\n"
+        f"Read CLAUDE.md for workflow, tools, and submission instructions."
     )
 
     debug_log = work_dir / "claude_debug.log"
     stdout_log = work_dir / "claude_stdout.log"
     stderr_log = work_dir / "claude_stderr.log"
+
+    system_prompt = (
+        f"You are fixing a {sanitizer} vulnerability in `{target}` ({language}).\n"
+        "RULES:\n"
+        "- Read ALL crash logs before writing any code.\n"
+        "- Crash logs have the sanitizer summary at the TAIL — read from the bottom.\n"
+        "- Test your patch against EVERY POV variant before submitting.\n"
+        f"- Submission to {patches_dir}/ is FINAL and irreversible.\n"
+        "- Write exactly ONE .diff file. Each file is auto-submitted separately.\n"
+        "- If your fix doesn't work, re-read the crash log and reconsider the root cause.\n"
+        "- Your patch must be semantically correct — fix the root cause, not just the symptom. "
+        "Write code that a maintainer would accept upstream."
+    )
 
     cmd = [
         "claude",
@@ -159,6 +188,7 @@ def run(
         "-d", str(source_dir),
         "--dangerously-skip-permissions",
         "--debug-file", str(debug_log),
+        "--append-system-prompt", system_prompt,
     ]
 
     # Stream stdout/stderr to log files (full conversation is in $HOME/.claude)

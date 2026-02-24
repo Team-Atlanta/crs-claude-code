@@ -45,8 +45,7 @@ SUBMISSION_FLUSH_WAIT_SECS = int(os.environ.get("SUBMISSION_FLUSH_WAIT_SECS", "1
 # Agent selection
 CRS_AGENT = os.environ.get("CRS_AGENT", "claude_code")
 
-# Crash log truncation limit (keep the tail — ASAN summaries are at the end)
-MAX_CRASH_LOG_CHARS = 16384
+# No crash log truncation — Claude Code manages its own context window.
 
 # Framework directories
 WORK_DIR = Path("/work")
@@ -119,6 +118,21 @@ def wait_for_builder() -> bool:
         return False
 
 
+def _read_response_streams(response_dir: Path, prefix: str) -> str:
+    """Read raw stdout/stderr for a libCRS response directory transparently."""
+    parts: list[str] = []
+    for stream in ("stdout", "stderr"):
+        path = response_dir / f"{prefix}_{stream}.log"
+        if not path.exists():
+            continue
+        text = path.read_text(errors="replace")
+        parts.append(f"===== {path.name} =====\n{text}")
+
+    if not parts:
+        return ""
+    return "\n\n".join(parts)
+
+
 def reproduce_crash(pov_path: Path) -> str:
     """Reproduce crash via builder sidecar using the base (unpatched) build."""
     if not HARNESS:
@@ -131,14 +145,14 @@ def reproduce_crash(pov_path: Path) -> str:
         exit_code = crs.run_pov(pov_path, HARNESS, "base", response_dir, BUILDER_MODULE)
         logger.info("reproduce_crash run-pov exit code: %d", exit_code)
 
-        pov_stderr = response_dir / "pov_stderr.log"
-        if pov_stderr.exists():
-            log = pov_stderr.read_text()
-            if len(log) > MAX_CRASH_LOG_CHARS:
-                log = "[...truncated...]\n" + log[-MAX_CRASH_LOG_CHARS:]
-            return log
+        stream_output = _read_response_streams(response_dir, "pov")
+        if stream_output:
+            return f"run-pov exit code: {exit_code}\n\n{stream_output}"
 
-        return "No crash output captured"
+        return (
+            f"run-pov exit code: {exit_code}\n"
+            f"No POV stdout/stderr logs found in {response_dir}"
+        )
     except Exception as e:
         return f"Error reproducing crash: {e}"
 
