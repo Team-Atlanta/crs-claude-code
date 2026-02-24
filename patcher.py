@@ -78,6 +78,13 @@ def _reset_source(source_dir: Path) -> None:
 
 def setup_source() -> Path | None:
     """Download source code and locate the project source directory."""
+    # Ensure safe.directory is set system-wide so git works regardless of
+    # file ownership (downloaded source may have different uid).
+    subprocess.run(
+        ["git", "config", "--system", "--add", "safe.directory", "*"],
+        capture_output=True,
+    )
+
     source_dir = WORK_DIR / "src"
     source_dir.mkdir(parents=True, exist_ok=True)
 
@@ -87,6 +94,7 @@ def setup_source() -> Path | None:
         logger.error("Failed to download source: %s", e)
         return None
 
+    # Locate the project directory: try "repo/" first, then any subdir with .git.
     project_dir = source_dir / "repo"
     if not project_dir.exists():
         for d in source_dir.iterdir():
@@ -94,9 +102,25 @@ def setup_source() -> Path | None:
                 project_dir = d
                 break
 
-    if not project_dir.exists() or not (project_dir / ".git").exists():
-        logger.error("No git repo found in %s", source_dir)
-        return None
+    # If still no project_dir, use "repo/" or first subdir as fallback.
+    if not project_dir.exists():
+        subdirs = [d for d in source_dir.iterdir() if d.is_dir()]
+        if subdirs:
+            project_dir = subdirs[0]
+        else:
+            logger.error("No project directory found in %s", source_dir)
+            return None
+
+    # Initialize a git repo if the source doesn't have one.
+    # The agent needs git to generate patches (git add -A && git diff --cached).
+    if not (project_dir / ".git").exists():
+        logger.info("No .git found in %s, initializing git repo", project_dir)
+        subprocess.run(["git", "init"], cwd=project_dir, capture_output=True, timeout=60)
+        subprocess.run(["git", "add", "-A"], cwd=project_dir, capture_output=True, timeout=60)
+        subprocess.run(
+            ["git", "commit", "-m", "initial source"],
+            cwd=project_dir, capture_output=True, timeout=60,
+        )
 
     return project_dir
 
