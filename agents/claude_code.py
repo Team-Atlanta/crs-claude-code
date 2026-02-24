@@ -153,15 +153,14 @@ def run(
     )
     (source_dir / "CLAUDE.md").write_text(claude_md)
 
-    # Include the tail of the first crash log inline so the agent can start
-    # reasoning about the vulnerability immediately without a file-read call.
-    first_crash_tail = povs[0][1][-2000:] if povs else ""
     target = os.environ.get("OSS_CRS_TARGET", source_dir.name)
+
+    # Build crash log file list for the prompt
+    crash_log_files = " ".join(f"`{work_dir}/crash_log_{i}.txt`" for i in range(len(povs)))
     prompt = (
         f"Fix the {sanitizer} vulnerability in project `{target}` "
         f"(harness: `{harness}`). {len(povs)} POV variant(s).\n\n"
-        f"First crash log tail:\n```\n{first_crash_tail}\n```\n\n"
-        f"Full crash logs: {work_dir}/crash_log_*.txt\n"
+        f"Crash logs: {crash_log_files}\n"
         f"Read CLAUDE.md for workflow, tools, and submission instructions."
     )
 
