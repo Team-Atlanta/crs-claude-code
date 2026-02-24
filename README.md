@@ -109,6 +109,8 @@ A patch is submitted only when it meets all criteria:
 3. **Tests pass** — project test suite passes (or skipped if none exists)
 4. **Semantically correct** — fixes the root cause with a minimal patch
 
+Submission is final once a `.diff` is written to `/patches/` and picked up by the watcher. Submitted patches cannot be edited or resubmitted, so complete a full pre-submit review first.
+
 ## Adding a new agent
 
 1. Copy `agents/template.py` to `agents/my_agent.py`.

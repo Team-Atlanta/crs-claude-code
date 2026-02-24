@@ -38,6 +38,8 @@ You can iterate freely: build, test, read the logs, refine your patch, and try a
 ## Submission
 
 Drop your verified .diff into `{patches_dir}/`. A daemon watches that directory and submits automatically.
+Submission is final: once a .diff is written to `{patches_dir}/`, it is auto-submitted and cannot be edited or resubmitted.
+Before writing the .diff, complete a full pre-submit review of build, all POV variants, tests, and patch correctness.
 
 An ideal patch meets all of these criteria:
 

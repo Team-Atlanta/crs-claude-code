@@ -40,6 +40,7 @@ LLM_API_URL = os.environ.get("OSS_CRS_LLM_API_URL", "")
 LLM_API_KEY = os.environ.get("OSS_CRS_LLM_API_KEY", "")
 
 BUILDER_MODULE = os.environ.get("BUILDER_MODULE", "inc-builder-asan")
+SUBMISSION_FLUSH_WAIT_SECS = int(os.environ.get("SUBMISSION_FLUSH_WAIT_SECS", "12"))
 
 # Agent selection
 CRS_AGENT = os.environ.get("CRS_AGENT", "claude_code")
@@ -182,7 +183,17 @@ def process_povs(pov_paths: list[Path], source_dir: Path, agent,
 
     patches = list(PATCHES_DIR.glob("*.diff"))
     if patches:
-        logger.info("Patch produced: %s", [p.name for p in patches])
+        patch_names = [p.name for p in patches]
+        if len(patches) > 1:
+            logger.warning(
+                "Multiple patch files detected (%d): %s. Each file in %s is auto-submitted.",
+                len(patches), patch_names, PATCHES_DIR,
+            )
+        logger.warning(
+            "Submission is final: detected patch file(s) %s in %s. Submitted patches cannot be edited or resubmitted.",
+            patch_names, PATCHES_DIR,
+        )
+        logger.info("Patch produced: %s", patch_names)
         return True
 
     logger.warning("Agent did not produce a patch")
@@ -278,7 +289,7 @@ def main():
     if process_povs(pov_files, source_dir, agent, ref_diff=ref_diff):
         # Wait for the submission daemon to flush (batch_time=10s) before exiting.
         logger.info("Patch submitted. Waiting for daemon to flush...")
-        time.sleep(30)
+        time.sleep(SUBMISSION_FLUSH_WAIT_SECS)
 
 
 if __name__ == "__main__":
