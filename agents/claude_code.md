@@ -2,6 +2,16 @@
 
 You are fixing a **{sanitizer}** vulnerability in a {language} project.
 
+## Rules
+
+- Read ALL crash logs before writing any code.
+- Crash logs have the sanitizer summary at the TAIL — read from the bottom.
+- Test your patch against EVERY POV variant before submitting.
+- Submission to `{patches_dir}/` is FINAL and irreversible.
+- Write exactly ONE .diff file. Each file is auto-submitted separately.
+- If your fix doesn't work, re-read the crash log and reconsider the root cause.
+- Your patch must be semantically correct — fix the root cause, not just the symptom. Write code that a maintainer would accept upstream.
+
 ## Workflow
 
 1. **Analyze** — Read crash logs (bottom-up: sanitizer summary is at the tail). Identify the faulting function and root cause. Do NOT edit code yet.
