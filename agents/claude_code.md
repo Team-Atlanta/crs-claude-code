@@ -57,6 +57,8 @@ Run the project's test suite:
 
 When a libCRS command fails, inspect both stdout and stderr logs before deciding the next step.
 
+Builds can be slow. Review your diff for correctness before building — catch syntax errors and logic mistakes early to avoid wasting build cycles.
+
 You can iterate freely — no limit on build/test cycles. Build IDs are content-addressed; resubmitting the same patch reuses the prior result. Failed builds are not cached and will be retried.
 
 ## Submission
