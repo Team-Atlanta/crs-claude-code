@@ -16,7 +16,8 @@ Given proof-of-vulnerability (POV) inputs that crash a target binary, the agent 
 │         │                                │                          │
 │         ▼                                ▼                          │
 │  3. Launch Claude Code agent with crash logs + CLAUDE.md            │
-│     claude -p --append-system-prompt <rules>                        │
+│     claude -p --dangerously-skip-permissions                        │
+│       --append-system-prompt <rules>                                │
 └─────────┬───────────────────────────────────────────────────────────┘
           │ stdin: prompt with crash log paths
           ▼
