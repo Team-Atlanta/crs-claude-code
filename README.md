@@ -7,15 +7,51 @@ Given proof-of-vulnerability (POV) inputs that crash a target binary, the agent 
 ## How it works
 
 ```
-POV files → reproduce crashes → Claude Code agent → .diff patch
-                                       ↕
-                                 libCRS (build & test via builder sidecar)
+┌─────────────────────────────────────────────────────────────────────┐
+│ patcher.py (orchestrator)                                           │
+│                                                                     │
+│  1. Fetch POVs & source         2. Reproduce crashes                │
+│     crs.fetch(POV)                 libCRS run-pov (build-id: base)  │
+│     crs.download(src)              → crash_log_*.txt                │
+│         │                                │                          │
+│         ▼                                ▼                          │
+│  3. Launch Claude Code agent with crash logs + CLAUDE.md            │
+│     claude -p --append-system-prompt <rules>                        │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │ stdin: prompt with crash log paths
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ Claude Code (autonomous agent)                                      │
+│                                                                     │
+│  ┌──────────┐    ┌──────────┐    ┌──────────────┐                   │
+│  │ Analyze  │───▶│   Fix    │───▶│   Verify     │                   │
+│  │          │    │          │    │              │                   │
+│  │ Read     │    │ Edit src │    │ apply-patch  │──▶ Builder        │
+│  │ crash    │    │ git diff │    │   -build     │    sidecar        │
+│  │ logs     │    │          │    │              │◀── build_id       │
+│  └──────────┘    └──────────┘    │ run-pov ────│──▶ Builder        │
+│                                  │   (all POVs)│◀── pov_exit_code  │
+│                       ▲          │ run-test ───│──▶ Builder        │
+│                       │          │             │◀── test_exit_code  │
+│                       │          └──────┬───────┘                   │
+│                       │                 │                           │
+│                       └── retry ◀── fail?                           │
+│                                         │ pass                      │
+│                                         ▼                           │
+│                              Write .diff to /patches/               │
+└─────────────────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────┐
+│ Submission daemon        │
+│ watches /patches/ ──────▶ oss-crs framework (auto-submit)
+└─────────────────────────┘
 ```
 
-1. **`run_patcher`** scans for POV files (all present before container starts) and reproduces all crashes against the unpatched binary.
-2. All POVs are batched as variants of the same vulnerability and handed to the **agent** (selected via `CRS_AGENT` env var) in a single session.
-3. The agent autonomously analyzes the vulnerability, edits source, and uses **libCRS** tools to build and test patches through a builder sidecar container — verifying against all POV variants.
-4. A verified `.diff` is written to `/patches/`, where a daemon auto-submits it.
+1. **`run_patcher`** fetches POVs and source, reproduces all crashes against the unpatched binary via the builder sidecar.
+2. All POVs are batched as variants of the same vulnerability and handed to **Claude Code** in a single session with crash logs and `CLAUDE.md` instructions.
+3. The agent autonomously analyzes crash logs, edits source, and uses **libCRS** tools (`apply-patch-build`, `run-pov`, `run-test`) to build and test patches through the builder sidecar — iterating until all POV variants pass.
+4. A verified `.diff` is written to `/patches/`, where a daemon auto-submits it to the oss-crs framework.
 
 The agent is language-agnostic — it edits source and generates diffs while the builder sidecar handles compilation. The sanitizer type (address, memory, undefined) is passed to the agent for context.
 
