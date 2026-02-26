@@ -244,23 +244,31 @@ def run(
     return False
 
 
-def run_bugfind(
+def generate_seeds(
     source_dir: Path,
     harness: str,
-    corpus_dir: Path,
-    crashes_dir: Path,
+    seeds_dir: Path,
     work_dir: Path,
-    fuzzer_module: str,
-    fuzz_time: int,
+    iteration: int,
     *,
     language: str = "c",
     sanitizer: str = "address",
-) -> bool:
-    """Launch Claude Code in agentic mode to generate seeds and manage fuzzing.
+) -> int:
+    """Launch Claude Code to generate unique seed inputs for fuzzing.
 
-    Returns True if any crashes were found.
+    Called in a loop by seed_generator.py while fuzzer runs in background.
+    Each iteration asks Claude to generate new, unique seeds based on
+    what already exists in the seeds directory.
+
+    Seeds are written to seeds_dir, then copied to corpus by the caller.
+
+    Returns the number of new seeds generated.
     """
     work_dir.mkdir(parents=True, exist_ok=True)
+
+    # Count existing seeds
+    existing_seeds = list(seeds_dir.glob("*"))
+    existing_count = len(existing_seeds)
 
     # Write CLAUDE.md with concrete paths
     claude_md = CLAUDE_MD_BUGFIND_TEMPLATE.format(
@@ -268,35 +276,43 @@ def run_bugfind(
         sanitizer=sanitizer,
         work_dir=work_dir,
         harness=harness,
-        corpus_dir=corpus_dir,
-        crashes_dir=crashes_dir,
-        fuzzer_module=fuzzer_module,
-        fuzz_time=fuzz_time,
+        seeds_dir=seeds_dir,
+        iteration=iteration,
+        existing_seed_count=existing_count,
     )
     (source_dir / "CLAUDE.md").write_text(claude_md)
 
     target = os.environ.get("OSS_CRS_TARGET", source_dir.name)
 
-    prompt = (
-        f"Find bugs in project `{target}` (harness: `{harness}`).\n\n"
-        f"Analyze the source code, generate intelligent seed inputs, "
-        f"and use the fuzzer to find crashes.\n"
-        f"Read CLAUDE.md for detailed workflow and tool instructions."
-    )
+    if iteration == 1:
+        prompt = (
+            f"Generate initial seed inputs for fuzzing `{target}` (harness: `{harness}`).\n\n"
+            f"Analyze the source code and harness to understand the input format, "
+            f"then create diverse seed files in `{seeds_dir}/`.\n"
+            f"Read CLAUDE.md for detailed instructions."
+        )
+    else:
+        prompt = (
+            f"Generate MORE unique seed inputs for `{target}` (harness: `{harness}`).\n\n"
+            f"This is iteration {iteration}. There are {existing_count} seeds already.\n"
+            f"Create new seeds that are DIFFERENT from existing ones — "
+            f"explore new code paths, edge cases, or input variations.\n"
+            f"Write seeds to `{seeds_dir}/`. Read CLAUDE.md for guidance."
+        )
 
     debug_log = work_dir / "claude_debug.log"
     stdout_log = work_dir / "claude_stdout.log"
     stderr_log = work_dir / "claude_stderr.log"
 
     system_prompt = (
-        f"You are finding bugs in `{target}` ({language}).\n"
+        f"You are generating fuzzing seeds for `{target}` ({language}).\n"
         "RULES:\n"
-        "- Analyze the harness code and target to understand input format.\n"
-        "- Generate diverse seed inputs that exercise different code paths.\n"
-        "- Start the fuzzer and monitor its progress.\n"
-        "- Watch for crashes in the crashes directory.\n"
-        f"- Fuzz time budget: {fuzz_time} seconds.\n"
-        "- Any crash files found are auto-submitted as POVs."
+        "- Analyze the harness and target code to understand input format.\n"
+        "- Generate UNIQUE seeds — don't duplicate what already exists.\n"
+        f"- Write seeds to {seeds_dir}/ with descriptive names.\n"
+        "- Focus on: edge cases, boundary values, malformed inputs, different code paths.\n"
+        "- A fuzzer is running in the background — it will pick up your seeds automatically.\n"
+        "- Quality over quantity: a few well-crafted seeds beat many random ones."
     )
 
     cmd = [
@@ -335,7 +351,7 @@ def run_bugfind(
                 proc.wait()
     except Exception as e:
         logger.error("Error running Claude Code: %s", e)
-        return False
+        return 0
 
     # Make chat history group-readable for post-run analysis.
     subprocess.run(
@@ -346,11 +362,8 @@ def run_bugfind(
     if proc.returncode != 0:
         logger.warning("Claude Code failed (rc=%d), see %s", proc.returncode, stderr_log)
 
-    # Check if any crashes were found
-    crashes = list(crashes_dir.glob("crash-*"))
-    if crashes:
-        logger.info("Found %d crash(es): %s", len(crashes), [c.name for c in crashes])
-        return True
-
-    logger.info("No crashes found")
-    return False
+    # Count new seeds
+    new_seeds = list(seeds_dir.glob("*"))
+    new_count = len(new_seeds) - existing_count
+    logger.info("Iteration %d: generated %d new seeds (total: %d)", iteration, new_count, len(new_seeds))
+    return new_count
