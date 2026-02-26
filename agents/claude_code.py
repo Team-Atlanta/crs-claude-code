@@ -27,6 +27,9 @@ except ValueError:
 _TEMPLATE_PATH = Path(__file__).with_suffix(".md")
 CLAUDE_MD_TEMPLATE = _TEMPLATE_PATH.read_text()
 
+_BUGFIND_TEMPLATE_PATH = Path(__file__).with_name("claude_code_bugfind.md")
+CLAUDE_MD_BUGFIND_TEMPLATE = _BUGFIND_TEMPLATE_PATH.read_text()
+
 
 def setup(source_dir: Path, config: dict) -> None:
     """One-time agent configuration.
@@ -238,4 +241,116 @@ def run(
         return True
 
     logger.info("Agent did not produce a patch")
+    return False
+
+
+def run_bugfind(
+    source_dir: Path,
+    harness: str,
+    corpus_dir: Path,
+    crashes_dir: Path,
+    work_dir: Path,
+    fuzzer_module: str,
+    fuzz_time: int,
+    *,
+    language: str = "c",
+    sanitizer: str = "address",
+) -> bool:
+    """Launch Claude Code in agentic mode to generate seeds and manage fuzzing.
+
+    Returns True if any crashes were found.
+    """
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write CLAUDE.md with concrete paths
+    claude_md = CLAUDE_MD_BUGFIND_TEMPLATE.format(
+        language=language,
+        sanitizer=sanitizer,
+        work_dir=work_dir,
+        harness=harness,
+        corpus_dir=corpus_dir,
+        crashes_dir=crashes_dir,
+        fuzzer_module=fuzzer_module,
+        fuzz_time=fuzz_time,
+    )
+    (source_dir / "CLAUDE.md").write_text(claude_md)
+
+    target = os.environ.get("OSS_CRS_TARGET", source_dir.name)
+
+    prompt = (
+        f"Find bugs in project `{target}` (harness: `{harness}`).\n\n"
+        f"Analyze the source code, generate intelligent seed inputs, "
+        f"and use the fuzzer to find crashes.\n"
+        f"Read CLAUDE.md for detailed workflow and tool instructions."
+    )
+
+    debug_log = work_dir / "claude_debug.log"
+    stdout_log = work_dir / "claude_stdout.log"
+    stderr_log = work_dir / "claude_stderr.log"
+
+    system_prompt = (
+        f"You are finding bugs in `{target}` ({language}).\n"
+        "RULES:\n"
+        "- Analyze the harness code and target to understand input format.\n"
+        "- Generate diverse seed inputs that exercise different code paths.\n"
+        "- Start the fuzzer and monitor its progress.\n"
+        "- Watch for crashes in the crashes directory.\n"
+        f"- Fuzz time budget: {fuzz_time} seconds.\n"
+        "- Any crash files found are auto-submitted as POVs."
+    )
+
+    cmd = [
+        "claude",
+        "-p",
+        "-d", str(source_dir),
+        "--dangerously-skip-permissions",
+        "--debug-file", str(debug_log),
+        "--append-system-prompt", system_prompt,
+    ]
+
+    try:
+        with open(stdout_log, "w") as out_f, open(stderr_log, "w") as err_f:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=out_f,
+                stderr=err_f,
+                text=True,
+                cwd=source_dir,
+                start_new_session=True,
+            )
+            try:
+                proc.stdin.write(prompt)
+                proc.stdin.close()
+                proc.wait(timeout=AGENT_TIMEOUT or None)
+                logger.info("Claude Code exit code: %d", proc.returncode)
+            except subprocess.TimeoutExpired:
+                logger.warning("Claude Code timed out (%ds), killing process tree", AGENT_TIMEOUT)
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    time.sleep(2)
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.wait()
+    except Exception as e:
+        logger.error("Error running Claude Code: %s", e)
+        return False
+
+    # Make chat history group-readable for post-run analysis.
+    subprocess.run(
+        ["chmod", "-R", "og+rX", str(Path.home() / ".claude")],
+        capture_output=True,
+    )
+
+    if proc.returncode != 0:
+        logger.warning("Claude Code failed (rc=%d), see %s", proc.returncode, stderr_log)
+
+    # Check if any crashes were found
+    crashes = list(crashes_dir.glob("crash-*"))
+    if crashes:
+        logger.info("Found %d crash(es): %s", len(crashes), [c.name for c in crashes])
+        return True
+
+    logger.info("No crashes found")
     return False

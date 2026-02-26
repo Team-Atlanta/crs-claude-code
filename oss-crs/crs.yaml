@@ -1,6 +1,6 @@
 name: crs-claude-code
 type:
-  - bug-fixing
+  - bug-finding
 version: 1.0.0
 docker_registry: ghcr.io/team-atlanta/crs-claude-code
 
@@ -13,36 +13,24 @@ target_build_phase:
     outputs:
       - build
       - src
-  - name: inc-builder-asan
-    snapshot: true
-    dockerfile: oss-crs-infra:default-builder
-    additional_env:
-      SANITIZER: address
 
 crs_run_phase:
-  patcher:
-    dockerfile: oss-crs/patcher.Dockerfile
+  seed-generator:
+    dockerfile: oss-crs/seed-generator.Dockerfile
     additional_env:
-      # Set via compose yaml additional_env.
       CRS_AGENT: claude_code
-      # ANTHROPIC_MODEL: claude-sonnet-4-5-20250929
-      # CLAUDE_CODE_SUBAGENT_MODEL: claude-sonnet-4-5-20250929
-      # ANTHROPIC_DEFAULT_OPUS_MODEL: claude-sonnet-4-5-20250929
-      # ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-4-5-20250929
-      # ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-sonnet-4-5-20250929
+      # ANTHROPIC_MODEL: claude-sonnet-4-6
       # AGENT_TIMEOUT: "0"  # seconds, 0 = no limit (default)
-  inc-builder-asan:
-    run_snapshot: true
-    dockerfile: oss-crs-infra:default-builder
+  fuzzer:
+    run_fuzzer: true
+    dockerfile: oss-crs-infra:default-fuzzer
 
 supported_target:
   mode:
     - full
-    - delta
-  language:  # language-agnostic — agent edits source, builder sidecar handles compilation
+  language:
     - c
     - c++
-    - jvm
   sanitizer:
     - address
     - undefined
@@ -53,6 +41,3 @@ required_llms:
   - claude-opus-4-6
   - claude-sonnet-4-6
   - claude-haiku-4-5-20251001
-#  - claude-opus-4-5-20251101
-#  - claude-sonnet-4-5-20250929
-#  - claude-haiku-4-5-20251001

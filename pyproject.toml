@@ -12,9 +12,10 @@ dependencies = []
 
 [project.scripts]
 run_patcher = "patcher:main"
+run_seed_generator = "seed_generator:main"
 
 [tool.setuptools]
-py-modules = ["patcher"]
+py-modules = ["patcher", "seed_generator"]
 
 [tool.setuptools.packages.find]
 include = ["agents", "agents.*"]
