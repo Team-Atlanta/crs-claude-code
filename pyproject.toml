@@ -20,4 +20,4 @@ py-modules = ["patcher"]
 include = ["agents", "agents.*"]
 
 [tool.setuptools.package-data]
-agents = ["*.md"]
+agents = ["*.md", "sections/*.md"]

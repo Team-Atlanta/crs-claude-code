@@ -54,7 +54,7 @@ Given proof-of-vulnerability (POV) inputs that crash a target binary, the agent 
 3. The agent autonomously analyzes crash logs, edits source, and uses **libCRS** tools (`apply-patch-build`, `run-pov`, `run-test`) to build and test patches through the builder sidecar — iterating until all POV variants pass.
 4. A verified `.diff` is written to `/patches/`, where a daemon auto-submits it to the oss-crs framework.
 
-The agent is language-agnostic — it edits source and generates diffs while the builder sidecar handles compilation. The sanitizer type (address, memory, undefined) is passed to the agent for context.
+The agent is language-agnostic — it edits source and generates diffs while the builder sidecar handles compilation. The sanitizer type (address, undefined) is passed to the agent for context.
 
 ## Project structure
 
@@ -156,12 +156,13 @@ Submission is final once a `.diff` is written to `/patches/` and picked up by th
 
 The agent receives:
 - **source_dir** — clean git repo of the target project
-- **povs** — list of `(pov_path, crash_log)` tuples (variants of the same bug)
+- **povs** — list of POV file paths (may be empty)
+- **bug_candidates** — list of static finding files (SARIF/JSON/text; may be empty)
 - **harness** — harness name for `run-pov`
 - **patches_dir** — write verified `.diff` files here
 - **work_dir** — scratch space
 - **language** — target language (c, c++, jvm)
-- **sanitizer** — sanitizer type (address, memory, undefined)
+- **sanitizer** — sanitizer type (`address` or `undefined`)
 - **builder** — builder sidecar module name (keyword-only, required)
 - **ref_diff** — reference diff showing the bug-introducing change (delta mode only, None in full mode)
 
