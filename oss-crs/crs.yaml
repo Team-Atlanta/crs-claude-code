@@ -25,11 +25,11 @@ crs_run_phase:
     additional_env:
       # Set via compose yaml additional_env.
       CRS_AGENT: claude_code
-      # ANTHROPIC_MODEL: claude-sonnet-4-5-20250929
-      # CLAUDE_CODE_SUBAGENT_MODEL: claude-sonnet-4-5-20250929
-      # ANTHROPIC_DEFAULT_OPUS_MODEL: claude-sonnet-4-5-20250929
-      # ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-4-5-20250929
-      # ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-sonnet-4-5-20250929
+      # ANTHROPIC_MODEL: claude-opus-4-6
+      # CLAUDE_CODE_SUBAGENT_MODEL: claude-sonnet-4-6
+      # ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-4-6
+      # ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-4-6
+      # ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-4-5-20251001
       # AGENT_TIMEOUT: "0"  # seconds, 0 = no limit (default)
   inc-builder-asan:
     run_snapshot: true

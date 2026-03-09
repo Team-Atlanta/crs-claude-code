@@ -33,6 +33,11 @@ crs-claude-code:
     # ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-sonnet-4-5-20250929
     # AGENT_TIMEOUT: "3600"                          # Optional: seconds, 0 = no limit (default)
 
-# --- LLM Configuration -----------------------------------------------------
-llm_config:
-  litellm_config: /path/to/sample-litellm-config.yaml  # UPDATE: path to litellm config
+# --- Optional LLM Configuration --------------------------------------------
+# Uncomment if you want OSS-CRS to inject an external LiteLLM endpoint.
+# llm_config:
+#   litellm:
+#     mode: external
+#     external:
+#       url_env: EXTERNAL_LITELLM_API_BASE
+#       key_env: EXTERNAL_LITELLM_API_KEY

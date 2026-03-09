@@ -19,10 +19,10 @@ def setup(source_dir: Path, config: dict) -> None:
 
 def run(
     source_dir: Path,
-    povs: list[Path],
-    bug_candidates: list[Path],
-    diffs: list[Path],
-    seeds: list[Path],
+    pov_dir: Path,
+    bug_candidate_dir: Path,
+    diff_dir: Path,
+    seed_dir: Path,
     harness: str,
     patches_dir: Path,
     work_dir: Path,
@@ -33,10 +33,9 @@ def run(
 ) -> bool:
     """Run the agent autonomously.
 
-    povs is a list of POV file paths — can be empty.
-    bug_candidates is a list of bug-candidate report files (SARIF/JSON/text) — can be empty.
-    diffs is a list of boot-time diff file paths — can be empty.
-    seeds is a list of boot-time seed file paths — can be empty.
+    pov_dir, bug_candidate_dir, diff_dir, and seed_dir are boot-time input
+    directories. Any of them may be empty. The agent should inspect and load
+    whatever files it needs from those paths.
 
     The agent should:
     1. Analyze available evidence (reproduce POVs and/or inspect bug-candidate reports)

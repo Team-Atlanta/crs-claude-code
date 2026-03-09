@@ -77,6 +77,13 @@ def _changed_patches(
     return sorted(name for name, state in now.items() if before.get(name) != state)
 
 
+def _list_input_files(input_dir: Path, *, non_empty_only: bool = False) -> list[Path]:
+    files = sorted(f for f in input_dir.rglob("*") if f.is_file() and not f.name.startswith("."))
+    if not non_empty_only:
+        return files
+    return [f for f in files if f.read_text(errors="replace").strip()]
+
+
 def setup(source_dir: Path, config: dict) -> None:
     """One-time agent configuration.
 
@@ -145,10 +152,10 @@ def setup(source_dir: Path, config: dict) -> None:
 
 def run(
     source_dir: Path,
-    povs: list[Path],
-    bug_candidates: list[Path],
-    diffs: list[Path],
-    seeds: list[Path],
+    pov_dir: Path,
+    bug_candidate_dir: Path,
+    diff_dir: Path,
+    seed_dir: Path,
     harness: str,
     patches_dir: Path,
     work_dir: Path,
@@ -159,9 +166,9 @@ def run(
 ) -> bool:
     """Launch Claude Code in agentic mode to autonomously fix the vulnerability.
 
-    povs is a list of POV paths (possibly empty).
-    bug_candidates is a list of static finding files (possibly empty).
-    Writes available evidence and CLAUDE.md (with concrete paths), then sends a prompt.
+    The input directories contain boot-time evidence fetched by the patcher.
+    This function discovers any files it wants from those directories, then
+    writes available evidence and CLAUDE.md (with concrete paths).
     Claude Code autonomously analyzes, edits, builds, tests, iterates, and
     writes the final .diff to patches_dir.
 
@@ -173,6 +180,11 @@ def run(
     except OSError as e:
         logger.error("Failed to load prompt template(s): %s", e)
         return False
+
+    povs = _list_input_files(pov_dir)
+    bug_candidates = _list_input_files(bug_candidate_dir)
+    diffs = _list_input_files(diff_dir, non_empty_only=True)
+    seeds = _list_input_files(seed_dir)
 
     pov_sections = []
     for pov_path in povs:

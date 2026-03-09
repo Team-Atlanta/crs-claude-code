@@ -139,7 +139,9 @@ def _observe_first_patch(
     first_patch_name = first_patch_name_ref.get("name")
     if first_patch_name:
         path = PATCHES_DIR / first_patch_name
-        return path if _is_patch_candidate(path) else None
+        if _is_patch_candidate(path):
+            return path
+        first_patch_name_ref["name"] = None
     for name in _changed_patches(before, PATCHES_DIR):
         path = PATCHES_DIR / name
         if not _is_patch_candidate(path):
@@ -170,7 +172,7 @@ def _submit_patch_once(
             sys.stdout.flush()
             sys.stderr.flush()
             os._exit(1)
-        return False
+        raise RuntimeError(f"failed to submit patch: {patch_path}") from None
     with submission_lock:
         submission_state["succeeded"] = True
     if exit_after_submit:
@@ -386,50 +388,32 @@ def process_inputs(
     run_result = False
 
     run_sig = inspect.signature(agent.run)
-    if "bug_candidates" in run_sig.parameters:
-        run_kwargs = {
-            "source_dir": source_dir,
-            "povs": pov_paths,
-            "bug_candidates": bug_candidate_paths,
-            "harness": HARNESS,
-            "patches_dir": PATCHES_DIR,
-            "work_dir": agent_work_dir,
-        }
-        optional_kwargs = {
-            "language": LANGUAGE,
-            "sanitizer": SANITIZER,
-            "builder": BUILDER_MODULE,
-        }
-        if "diffs" in run_sig.parameters:
-            run_kwargs["diffs"] = diff_paths
-        elif "ref_diff" in run_sig.parameters:
-            run_kwargs["ref_diff"] = diff_paths[0] if diff_paths else None
-        if "seeds" in run_sig.parameters:
-            run_kwargs["seeds"] = seed_paths
-        for key, value in optional_kwargs.items():
-            if key in run_sig.parameters:
-                run_kwargs[key] = value
-        run_result = bool(agent.run(**run_kwargs))
-    else:
-        old_kwargs = {}
-        if "language" in run_sig.parameters:
-            old_kwargs["language"] = LANGUAGE
-        if "sanitizer" in run_sig.parameters:
-            old_kwargs["sanitizer"] = SANITIZER
-        if "builder" in run_sig.parameters:
-            old_kwargs["builder"] = BUILDER_MODULE
-        if "ref_diff" in run_sig.parameters:
-            old_kwargs["ref_diff"] = diff_paths[0] if diff_paths else None
-        run_result = bool(
-            agent.run(
-                source_dir,
-                pov_paths,
-                HARNESS,
-                PATCHES_DIR,
-                agent_work_dir,
-                **old_kwargs,
-            )
+    required_params = {"pov_dir", "bug_candidate_dir", "diff_dir", "seed_dir"}
+    missing_params = sorted(param for param in required_params if param not in run_sig.parameters)
+    if missing_params:
+        raise TypeError(
+            f"Agent.run must accept directory-based inputs {sorted(required_params)}; "
+            f"missing: {missing_params}"
         )
+    run_kwargs = {
+        "source_dir": source_dir,
+        "pov_dir": POV_DIR,
+        "bug_candidate_dir": BUG_CANDIDATE_DIR,
+        "diff_dir": DIFF_DIR,
+        "seed_dir": SEED_DIR,
+        "harness": HARNESS,
+        "patches_dir": PATCHES_DIR,
+        "work_dir": agent_work_dir,
+    }
+    optional_kwargs = {
+        "language": LANGUAGE,
+        "sanitizer": SANITIZER,
+        "builder": BUILDER_MODULE,
+    }
+    for key, value in optional_kwargs.items():
+        if key in run_sig.parameters:
+            run_kwargs[key] = value
+    run_result = bool(agent.run(**run_kwargs))
 
     submit_stop_event.set()
     submit_thread.join(timeout=1)
@@ -528,12 +512,12 @@ def main():
         claude_home.rename(claude_home_backup)
 
     try:
-        crs.register_shared_dir(claude_home, "claude-logs")
-        logger.info("Claude logs shared at %s", claude_home)
+        crs.register_shared_dir(claude_home, "claude-home")
+        logger.info("Claude home shared at %s", claude_home)
         if claude_home_backup.exists() or claude_home_backup.is_symlink():
             logger.info("Preserved previous Claude home backup at %s", claude_home_backup)
     except Exception as e:
-        logger.warning("Failed to register claude-logs shared dir: %s", e)
+        logger.warning("Failed to register claude-home shared dir: %s", e)
         if claude_home.exists() or claude_home.is_symlink():
             if claude_home.is_symlink() or claude_home.is_file():
                 claude_home.unlink()
