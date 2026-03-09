@@ -21,7 +21,7 @@ import threading
 import time
 from pathlib import Path
 
-from libCRS.base import DataType
+from libCRS.base import DataType, SourceType
 from libCRS.cli.main import init_crs_utils
 
 logging.basicConfig(
@@ -267,10 +267,18 @@ def setup_source() -> Path | None:
     source_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        crs.download_build_output("src", source_dir)
-    except Exception as e:
-        logger.error("Failed to download source: %s", e)
-        return None
+        crs.download_source(SourceType.REPO, source_dir)
+    except Exception as repo_error:
+        logger.warning("Failed to download repo source via libCRS: %s", repo_error)
+        try:
+            crs.download_build_output("src", source_dir)
+        except Exception as build_output_error:
+            logger.error(
+                "Failed to download source via repo and build output paths: repo=%s build_output=%s",
+                repo_error,
+                build_output_error,
+            )
+            return None
 
     project_dir = source_dir / "repo"
     if not project_dir.exists():
