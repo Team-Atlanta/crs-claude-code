@@ -45,7 +45,6 @@ supported_target:
     - jvm
   sanitizer:
     - address
-    - undefined
   architecture:
     - x86_64
 
