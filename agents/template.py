@@ -21,6 +21,8 @@ def run(
     source_dir: Path,
     povs: list[Path],
     bug_candidates: list[Path],
+    diffs: list[Path],
+    seeds: list[Path],
     harness: str,
     patches_dir: Path,
     work_dir: Path,
@@ -28,18 +30,19 @@ def run(
     language: str = "c",
     sanitizer: str = "address",
     builder: str,
-    ref_diff: str | None = None,
 ) -> bool:
     """Run the agent autonomously.
 
     povs is a list of POV file paths — can be empty.
     bug_candidates is a list of bug-candidate report files (SARIF/JSON/text) — can be empty.
+    diffs is a list of boot-time diff file paths — can be empty.
+    seeds is a list of boot-time seed file paths — can be empty.
 
     The agent should:
     1. Analyze available evidence (reproduce POVs and/or inspect bug-candidate reports)
     2. Edit source files to fix the vulnerability
     3. Build and test using libCRS commands (pass --builder to each)
-    4. Write verified .diff file(s) to patches_dir
+    4. Write exactly one final .diff file to patches_dir
     5. Verify the patch against all available validation signals
 
     Returns True if the agent believes it produced a patch.

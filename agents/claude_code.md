@@ -10,12 +10,14 @@ You are fixing a **{sanitizer}** vulnerability in a {language} project.
 - Never write temporary or experimental `.diff` files to `{patches_dir}/`.
 - During iteration, you can keep candidate diffs in `{work_dir}` (or any non-watched path).
 - Write to `{patches_dir}/` exactly once, only after validation is complete.
+- Boot-time input paths are fixed for this run. No new POVs, bug-candidates, diff files, or seed files will appear after startup.
 - If your fix doesn't work, re-check the available evidence and reconsider the root cause.
 - Your patch must be semantically correct — fix the root cause, not just the symptom. Write code that a maintainer would accept upstream.
 
 {workflow_section}
 {pov_section}
 {bug_candidate_section}
+{seed_section}
 {diff_section}
 ## Pre-Submit Checklist (MUST pass before writing .diff)
 
@@ -64,10 +66,10 @@ You can write only the final verified patch to `{patches_dir}/`.
 
 ## Submission
 
-Drop your verified `.diff` into `{patches_dir}/`. A daemon watches that directory and submits automatically.
-Submission is FINAL: once a `.diff` is written, it is auto-submitted and cannot be edited or resubmitted.
-You can write exactly ONE `.diff` file — each file is a separate submission.
-You can complete the pre-submit checklist above before writing any .diff file.
+Drop your verified `.diff` into `{patches_dir}/`. The patcher submits the first patch file written there and exits.
+Submission is FINAL: after the first patch file is written, later files or modifications are ignored.
+You can write exactly ONE `.diff` file.
+You can complete the pre-submit checklist above before writing any `.diff` file.
 
 ## Context
 

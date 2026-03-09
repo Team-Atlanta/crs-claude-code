@@ -1,7 +1,6 @@
-## Reference Diff (Delta Mode)
+## Diff Context (Delta Mode)
 
-This diff shows the change that introduced the vulnerability.
-Fix the flaw in this change — don't blindly revert it.
+These diff files provide delta-mode context for the vulnerability. Use them to localize the issue, but do not blindly revert them.
 
 Changed files: {changed_files_str}
 

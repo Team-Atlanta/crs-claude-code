@@ -9,6 +9,7 @@ submission (writing .diff to /patches/).
 To add a new agent, create a module in agents/ implementing setup() and run().
 """
 
+import hashlib
 import importlib
 import inspect
 import logging
@@ -39,7 +40,6 @@ LLM_API_URL = os.environ.get("OSS_CRS_LLM_API_URL", "")
 LLM_API_KEY = os.environ.get("OSS_CRS_LLM_API_KEY", "")
 
 BUILDER_MODULE = os.environ.get("BUILDER_MODULE", "inc-builder-asan")
-SUBMISSION_FLUSH_WAIT_SECS = int(os.environ.get("SUBMISSION_FLUSH_WAIT_SECS", "12"))
 
 CRS_AGENT = os.environ.get("CRS_AGENT", "claude_code")
 
@@ -48,6 +48,10 @@ PATCHES_DIR = Path("/patches")
 POV_DIR = WORK_DIR / "povs"
 DIFF_DIR = WORK_DIR / "diffs"
 BUG_CANDIDATE_DIR = WORK_DIR / "bug-candidates"
+SEED_DIR = WORK_DIR / "seeds"
+PATCH_POLL_INTERVAL_SECS = 0.5
+PATCH_STABLE_POLLS = 3
+PATCH_FALLBACK_WAIT_SECS = 2.0
 
 crs = None
 
@@ -74,16 +78,173 @@ def _reset_source(source_dir: Path) -> None:
         raise RuntimeError(f"git clean failed: {stderr.strip()}")
 
 
-def _snapshot_patch_state() -> dict[str, tuple[int, int]]:
+def _snapshot_patch_state(patches_dir: Path) -> dict[str, tuple[int, int]]:
     """Capture patch file state by name -> (mtime_ns, size)."""
     state: dict[str, tuple[int, int]] = {}
-    for p in PATCHES_DIR.glob("*.diff"):
+    for p in patches_dir.glob("*.diff"):
         try:
             st = p.stat()
         except OSError:
             continue
         state[p.name] = (st.st_mtime_ns, st.st_size)
     return state
+
+
+def _changed_patches(
+    before: dict[str, tuple[int, int]],
+    patches_dir: Path,
+) -> list[str]:
+    """Return sorted patch names that are new or modified since snapshot."""
+    now = _snapshot_patch_state(patches_dir)
+    return sorted(name for name, state in now.items() if before.get(name) != state)
+
+
+def _is_patch_candidate(path: Path) -> bool:
+    """Return True when the path looks like a patch artifact candidate."""
+    if not path.is_file() or path.name.startswith(".") or path.suffix != ".diff":
+        return False
+    try:
+        path.stat()
+        return True
+    except OSError:
+        return False
+
+
+def _read_patch_signature(path: Path) -> tuple[int, int, str] | None:
+    """Return a stable signature for a patch file or None if still in flux."""
+    if not _is_patch_candidate(path):
+        return None
+    try:
+        before = path.stat()
+        data = path.read_bytes()
+        after = path.stat()
+    except OSError:
+        return None
+    if (
+        before.st_mtime_ns != after.st_mtime_ns
+        or before.st_size != after.st_size
+        or after.st_size == 0
+        or not data.strip()
+    ):
+        return None
+    digest = hashlib.blake2b(data, digest_size=16).hexdigest()
+    return after.st_mtime_ns, after.st_size, digest
+
+
+def _observe_first_patch(
+    before: dict[str, tuple[int, int]],
+    first_patch_name_ref: dict[str, str | None],
+) -> Path | None:
+    """Latch and return the first changed patch candidate observed this run."""
+    first_patch_name = first_patch_name_ref.get("name")
+    if first_patch_name:
+        path = PATCHES_DIR / first_patch_name
+        return path if _is_patch_candidate(path) else None
+    for name in _changed_patches(before, PATCHES_DIR):
+        path = PATCHES_DIR / name
+        if not _is_patch_candidate(path):
+            continue
+        first_patch_name_ref["name"] = name
+        return path
+    return None
+
+
+def _submit_patch_once(
+    patch_path: Path,
+    submission_state: dict[str, bool],
+    submission_lock: threading.Lock,
+    *,
+    exit_after_submit: bool,
+) -> bool:
+    """Submit the selected patch at most once."""
+    with submission_lock:
+        if submission_state["attempted"]:
+            return submission_state["succeeded"]
+        submission_state["attempted"] = True
+    logger.warning("Submission is final: submitting first patch %s", patch_path)
+    try:
+        crs.submit(DataType.PATCH, patch_path)
+    except Exception:
+        logger.exception("Failed to submit patch %s", patch_path)
+        if exit_after_submit:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(1)
+        return False
+    with submission_lock:
+        submission_state["succeeded"] = True
+    if exit_after_submit:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+    return True
+
+
+def _watch_for_first_patch(
+    existing_patches: dict[str, tuple[int, int]],
+    stop_event: threading.Event,
+    first_patch_name_ref: dict[str, str | None],
+    submission_state: dict[str, bool],
+    submission_lock: threading.Lock,
+) -> None:
+    """Submit the first stable patch file observed in /patches and exit."""
+    last_signature: tuple[int, int, str] | None = None
+    stable_polls = 0
+    while not stop_event.is_set():
+        candidate_path = _observe_first_patch(existing_patches, first_patch_name_ref)
+        if candidate_path is None:
+            time.sleep(PATCH_POLL_INTERVAL_SECS)
+            continue
+        signature = _read_patch_signature(candidate_path)
+        if signature is None:
+            last_signature = None
+            stable_polls = 0
+            time.sleep(PATCH_POLL_INTERVAL_SECS)
+            continue
+        if signature == last_signature:
+            stable_polls += 1
+        else:
+            last_signature = signature
+            stable_polls = 1
+        if stable_polls >= PATCH_STABLE_POLLS:
+            _submit_patch_once(
+                candidate_path,
+                submission_state,
+                submission_lock,
+                exit_after_submit=True,
+            )
+        time.sleep(PATCH_POLL_INTERVAL_SECS)
+
+
+def _wait_for_stable_first_patch(
+    existing_patches: dict[str, tuple[int, int]],
+    first_patch_name_ref: dict[str, str | None],
+    timeout_secs: float,
+) -> Path | None:
+    """Wait briefly for the first observed patch to settle before fallback submit."""
+    deadline = time.monotonic() + timeout_secs
+    last_signature: tuple[int, int, str] | None = None
+    stable_polls = 0
+    while time.monotonic() < deadline:
+        candidate_path = _observe_first_patch(existing_patches, first_patch_name_ref)
+        if candidate_path is None:
+            time.sleep(PATCH_POLL_INTERVAL_SECS)
+            continue
+        signature = _read_patch_signature(candidate_path)
+        if signature is None:
+            last_signature = None
+            stable_polls = 0
+            time.sleep(PATCH_POLL_INTERVAL_SECS)
+            continue
+        if signature == last_signature:
+            stable_polls += 1
+        else:
+            last_signature = signature
+            stable_polls = 1
+        if stable_polls >= PATCH_STABLE_POLLS:
+            return candidate_path
+        time.sleep(PATCH_POLL_INTERVAL_SECS)
+    return None
 
 
 def setup_source() -> Path | None:
@@ -181,10 +342,11 @@ def load_agent(agent_name: str):
 
 def process_inputs(
     pov_paths: list[Path],
+    diff_paths: list[Path],
+    seed_paths: list[Path],
     source_dir: Path,
     agent,
     bug_candidate_paths: list[Path],
-    ref_diff: str | None = None,
 ) -> bool:
     """Process available inputs in a single agent session."""
     try:
@@ -196,7 +358,23 @@ def process_inputs(
     agent_work_dir = WORK_DIR / "agent"
     agent_work_dir.mkdir(parents=True, exist_ok=True)
 
-    existing_patches = _snapshot_patch_state()
+    existing_patches = _snapshot_patch_state(PATCHES_DIR)
+    first_patch_name_ref: dict[str, str | None] = {"name": None}
+    submission_state = {"attempted": False, "succeeded": False}
+    submission_lock = threading.Lock()
+    submit_stop_event = threading.Event()
+    submit_thread = threading.Thread(
+        target=_watch_for_first_patch,
+        args=(
+            existing_patches,
+            submit_stop_event,
+            first_patch_name_ref,
+            submission_state,
+            submission_lock,
+        ),
+        daemon=True,
+    )
+    submit_thread.start()
     run_result = False
 
     run_sig = inspect.signature(agent.run)
@@ -213,8 +391,13 @@ def process_inputs(
             "language": LANGUAGE,
             "sanitizer": SANITIZER,
             "builder": BUILDER_MODULE,
-            "ref_diff": ref_diff,
         }
+        if "diffs" in run_sig.parameters:
+            run_kwargs["diffs"] = diff_paths
+        elif "ref_diff" in run_sig.parameters:
+            run_kwargs["ref_diff"] = diff_paths[0] if diff_paths else None
+        if "seeds" in run_sig.parameters:
+            run_kwargs["seeds"] = seed_paths
         for key, value in optional_kwargs.items():
             if key in run_sig.parameters:
                 run_kwargs[key] = value
@@ -228,7 +411,7 @@ def process_inputs(
         if "builder" in run_sig.parameters:
             old_kwargs["builder"] = BUILDER_MODULE
         if "ref_diff" in run_sig.parameters:
-            old_kwargs["ref_diff"] = ref_diff
+            old_kwargs["ref_diff"] = diff_paths[0] if diff_paths else None
         run_result = bool(
             agent.run(
                 source_dir,
@@ -240,6 +423,9 @@ def process_inputs(
             )
         )
 
+    submit_stop_event.set()
+    submit_thread.join(timeout=1)
+
     post_run_reset_ok = True
     try:
         _reset_source(source_dir)
@@ -247,24 +433,23 @@ def process_inputs(
         post_run_reset_ok = False
         logger.error("Failed to reset source after agent run: %s", e)
 
-    current_patches = _snapshot_patch_state()
-    changed_patch_names = sorted(
-        name
-        for name, state in current_patches.items()
-        if existing_patches.get(name) != state
-    )
-    if changed_patch_names:
-        if len(changed_patch_names) > 1:
-            logger.warning(
-                "Multiple changed patch files detected (%d): %s. Each file in %s is auto-submitted.",
-                len(changed_patch_names), changed_patch_names, PATCHES_DIR,
-            )
-        logger.warning(
-            "Submission is final: detected patch file(s) %s in %s. Submitted patches cannot be edited or resubmitted.",
-            changed_patch_names, PATCHES_DIR,
+    selected_patch = None
+    with submission_lock:
+        submission_attempted = submission_state["attempted"]
+    if not submission_attempted:
+        selected_patch = _wait_for_stable_first_patch(
+            existing_patches,
+            first_patch_name_ref,
+            PATCH_FALLBACK_WAIT_SECS,
         )
-        logger.info("Updated/new patch produced: %s", changed_patch_names)
-        return True
+    if selected_patch is not None:
+        logger.warning("Agent produced patch %s after watcher shutdown; submitting now", selected_patch)
+        return _submit_patch_once(
+            selected_patch,
+            submission_state,
+            submission_lock,
+            exit_after_submit=False,
+        )
 
     if run_result:
         logger.warning(
@@ -292,15 +477,13 @@ def main():
     crs = init_crs_utils()
 
     PATCHES_DIR.mkdir(parents=True, exist_ok=True)
-    threading.Thread(
-        target=crs.register_submit_dir,
-        args=(DataType.PATCH, PATCHES_DIR),
-        daemon=True,
-    ).start()
-    logger.info("Patch submission watcher started")
 
-    pov_files_fetched = crs.fetch(DataType.POV, POV_DIR)
-    logger.info("Fetched %d POV file(s) into %s", len(pov_files_fetched), POV_DIR)
+    try:
+        pov_files_fetched = crs.fetch(DataType.POV, POV_DIR)
+        if pov_files_fetched:
+            logger.info("Fetched %d POV file(s) into %s", len(pov_files_fetched), POV_DIR)
+    except Exception as e:
+        logger.info("No POV input fetched: %s", e)
 
     try:
         diff_files_fetched = crs.fetch(DataType.DIFF, DIFF_DIR)
@@ -319,6 +502,13 @@ def main():
             )
     except Exception as e:
         logger.warning("Bug-candidate fetch failed: %s — static findings unavailable", e)
+
+    try:
+        seed_files_fetched = crs.fetch(DataType.SEED, SEED_DIR)
+        if seed_files_fetched:
+            logger.info("Fetched %d seed file(s) into %s", len(seed_files_fetched), SEED_DIR)
+    except Exception as e:
+        logger.warning("Seed fetch failed: %s — seeds unavailable", e)
 
     claude_home = Path.home() / ".claude"
     claude_home_backup = claude_home.with_name(".claude.pre-crs-backup")
@@ -362,12 +552,18 @@ def main():
     bug_candidate_files = sorted(
         f for f in BUG_CANDIDATE_DIR.rglob("*") if f.is_file() and not f.name.startswith(".")
     )
+    diff_files = sorted(f for f in DIFF_DIR.rglob("*") if f.is_file() and not f.name.startswith("."))
+    diff_files = [f for f in diff_files if f.read_text(errors="replace").strip()]
+    seed_files = sorted(f for f in SEED_DIR.rglob("*") if f.is_file() and not f.name.startswith("."))
 
-    ref_diff_path = DIFF_DIR / "ref.diff"
-    has_ref_diff = DIFF_DIR.exists() and ref_diff_path.is_file()
-
-    if not pov_files and not bug_candidate_files and not has_ref_diff:
-        logger.warning("No POV, bug-candidate, or ref.diff inputs found in %s, %s, and %s", POV_DIR, BUG_CANDIDATE_DIR, ref_diff_path)
+    if not pov_files and not bug_candidate_files and not diff_files and not seed_files:
+        logger.warning(
+            "No startup inputs found in %s, %s, %s, or %s",
+            POV_DIR,
+            BUG_CANDIDATE_DIR,
+            DIFF_DIR,
+            SEED_DIR,
+        )
         sys.exit(0)
 
     if pov_files:
@@ -378,20 +574,18 @@ def main():
             len(bug_candidate_files),
             [p.name for p in bug_candidate_files],
         )
-
-    ref_diff = None
-    if has_ref_diff:
-        ref_diff = ref_diff_path.read_text()
-        logger.info("Reference diff found (%d chars)", len(ref_diff))
+    if diff_files:
+        logger.info("Found %d diff file(s): %s", len(diff_files), [p.name for p in diff_files])
+    if seed_files:
+        logger.info("Found %d seed file(s): %s", len(seed_files), [p.name for p in seed_files])
 
     if not wait_for_builder():
         logger.warning(
             "Builder sidecar DNS check failed at startup; continuing and relying on libCRS command-level retries/health waits"
         )
 
-    if process_inputs(pov_files, source_dir, agent, bug_candidate_files, ref_diff=ref_diff):
-        logger.info("Patch submitted. Waiting for daemon to flush...")
-        time.sleep(SUBMISSION_FLUSH_WAIT_SECS)
+    if process_inputs(pov_files, diff_files, seed_files, source_dir, agent, bug_candidate_files):
+        logger.info("Patch submitted")
 
 
 if __name__ == "__main__":
