@@ -8,7 +8,7 @@ You are fixing a **{sanitizer}** vulnerability in a {language} project.
 - Submission to `{patches_dir}/` is FINAL and irreversible.
 - Write exactly ONE final `.diff` file to `{patches_dir}/`.
 - Never write temporary or experimental `.diff` files to `{patches_dir}/`.
-- During iteration, you can keep candidate diffs in `{work_dir}` (or any non-watched path).
+- During iteration, edit and test the repository in `{source_dir}`.
 - Write to `{patches_dir}/` exactly once, only after validation is complete.
 - Boot-time input paths are fixed for this run. No new POVs, bug-candidates, diff files, or seed files will appear after startup.
 - If your fix doesn't work, re-check the available evidence and reconsider the root cause.
@@ -73,6 +73,7 @@ You can complete the pre-submit checklist above before writing any `.diff` file.
 
 ## Context
 
-- Work directory: `{work_dir}`
-- You can use `git add -A && git diff --cached` to generate patches.
-- The source tree resets after your run — only .diff files in `{patches_dir}/` persist.
+- Source directory: `{source_dir}`
+- Scratch/log directory: `{work_dir}`
+- You can use `git add -A && git diff --cached` from `{source_dir}` to generate patches.
+- The source tree at `{source_dir}` resets after your run — only `.diff` files in `{patches_dir}/` persist.
