@@ -269,38 +269,48 @@ def setup_source() -> Path | None:
     source_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        crs.download_source(SourceType.REPO, source_dir)
+        project_dir = Path(crs.download_source(SourceType.REPO, source_dir))
     except Exception as repo_error:
         logger.error("Failed to download repo source via libCRS: %s", repo_error)
         return None
 
-    project_dir = source_dir
+    project_dir = project_dir.resolve()
+    source_dir = source_dir.resolve()
 
-    if not (project_dir / ".git").exists():
-        logger.info("No .git found in %s, initializing git repo", project_dir)
-        subprocess.run(["git", "init"], cwd=project_dir, capture_output=True, timeout=60)
-        subprocess.run(["git", "add", "-A"], cwd=project_dir, capture_output=True, timeout=60)
-        commit_proc = subprocess.run(
-            [
-                "git",
-                "-c",
-                "user.name=crs-claude-code",
-                "-c",
-                "user.email=crs-claude-code@local",
-                "commit",
-                "-m",
-                "initial source",
-            ],
-            cwd=project_dir, capture_output=True, timeout=60,
+    if project_dir != source_dir and source_dir not in project_dir.parents:
+        logger.error(
+            "libCRS returned project dir outside downloaded source tree: %s",
+            project_dir,
         )
-        if commit_proc.returncode != 0:
-            stderr = (
-                commit_proc.stderr.decode(errors="replace")
-                if isinstance(commit_proc.stderr, bytes)
-                else str(commit_proc.stderr)
-            )
-            logger.error("Failed to create initial commit: %s", stderr.strip())
-            return None
+        return None
+
+    if (project_dir / ".git").exists():
+        return project_dir
+
+    logger.info("No .git found in %s, initializing git repo", project_dir)
+    subprocess.run(["git", "init"], cwd=project_dir, capture_output=True, timeout=60)
+    subprocess.run(["git", "add", "-A"], cwd=project_dir, capture_output=True, timeout=60)
+    commit_proc = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=crs-claude-code",
+            "-c",
+            "user.email=crs-claude-code@local",
+            "commit",
+            "-m",
+            "initial source",
+        ],
+        cwd=project_dir, capture_output=True, timeout=60,
+    )
+    if commit_proc.returncode != 0:
+        stderr = (
+            commit_proc.stderr.decode(errors="replace")
+            if isinstance(commit_proc.stderr, bytes)
+            else str(commit_proc.stderr)
+        )
+        logger.error("Failed to create initial commit: %s", stderr.strip())
+        return None
 
     return project_dir
 
