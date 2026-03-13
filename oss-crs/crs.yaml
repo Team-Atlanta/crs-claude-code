@@ -25,6 +25,7 @@ crs_run_phase:
     additional_env:
       # Set via compose yaml additional_env.
       CRS_AGENT: claude_code
+      # CLAUDE_CODE_CLI_VERSION: "2.1.42"  # Optional prepare-phase override for base image build
       # ANTHROPIC_MODEL: claude-opus-4-6
       # CLAUDE_CODE_SUBAGENT_MODEL: claude-sonnet-4-6
       # ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-4-6

@@ -34,8 +34,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+ARG CLAUDE_CODE_CLI_VERSION=2.1.42
+
 # Claude Code CLI (pinned to avoid breaking .claude.json schema changes)
-RUN npm install -g @anthropic-ai/claude-code@2.1.42
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_CLI_VERSION}
 
 # Git config
 RUN git config --global user.email "crs@oss-crs.dev" \
