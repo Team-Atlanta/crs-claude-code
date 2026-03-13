@@ -144,6 +144,12 @@ Available models:
 - `claude-sonnet-4-20250514`
 - `claude-haiku-4-5-20251001`
 
+## Debug artifacts
+
+- Log directory: `/root/.claude` (registered via `register-log-dir`)
+- Per-run logs: `/work/agent/claude_code_stdout.log`, `/work/agent/claude_code_stderr.log`
+- Claude Code internal logs: `/root/.claude/projects/`
+
 ## Patch submission
 
 The agent is instructed to satisfy these criteria before writing a patch:
