@@ -265,31 +265,31 @@ def setup_source() -> Path | None:
                 "Failed to configure git safe.directory in both --system and --global scopes"
             )
 
-    source_dir = WORK_DIR / "src"
-    source_dir.mkdir(parents=True, exist_ok=True)
+    download_root = WORK_DIR / "src"
+    download_root.mkdir(parents=True, exist_ok=True)
 
     try:
-        project_dir = Path(crs.download_source(SourceType.REPO, source_dir))
+        worktree_dir = Path(crs.download_source(SourceType.REPO, download_root))
     except Exception as repo_error:
         logger.error("Failed to download repo source via libCRS: %s", repo_error)
         return None
 
-    project_dir = project_dir.resolve()
-    source_dir = source_dir.resolve()
+    worktree_dir = worktree_dir.resolve()
+    download_root = download_root.resolve()
 
-    if project_dir != source_dir and source_dir not in project_dir.parents:
+    if worktree_dir != download_root and download_root not in worktree_dir.parents:
         logger.error(
-            "libCRS returned project dir outside downloaded source tree: %s",
-            project_dir,
+            "libCRS returned worktree dir outside downloaded source tree: %s",
+            worktree_dir,
         )
         return None
 
-    if (project_dir / ".git").exists():
-        return project_dir
+    if (worktree_dir / ".git").exists():
+        return worktree_dir
 
-    logger.info("No .git found in %s, initializing git repo", project_dir)
-    subprocess.run(["git", "init"], cwd=project_dir, capture_output=True, timeout=60)
-    subprocess.run(["git", "add", "-A"], cwd=project_dir, capture_output=True, timeout=60)
+    logger.info("No .git found in %s, initializing git repo", worktree_dir)
+    subprocess.run(["git", "init"], cwd=worktree_dir, capture_output=True, timeout=60)
+    subprocess.run(["git", "add", "-A"], cwd=worktree_dir, capture_output=True, timeout=60)
     commit_proc = subprocess.run(
         [
             "git",
@@ -301,7 +301,7 @@ def setup_source() -> Path | None:
             "-m",
             "initial source",
         ],
-        cwd=project_dir, capture_output=True, timeout=60,
+        cwd=worktree_dir, capture_output=True, timeout=60,
     )
     if commit_proc.returncode != 0:
         stderr = (
@@ -312,7 +312,7 @@ def setup_source() -> Path | None:
         logger.error("Failed to create initial commit: %s", stderr.strip())
         return None
 
-    return project_dir
+    return worktree_dir
 
 
 def wait_for_builder() -> bool:
@@ -516,15 +516,15 @@ def main():
             claude_home_backup.rename(claude_home)
         claude_home.mkdir(parents=True, exist_ok=True)
 
-    source_dir = setup_source()
-    if source_dir is None:
+    worktree_dir = setup_source()
+    if worktree_dir is None:
         logger.error("Failed to set up source directory")
         sys.exit(1)
 
-    logger.info("Source directory: %s", source_dir)
+    logger.info("Worktree directory: %s", worktree_dir)
 
     agent = load_agent(CRS_AGENT)
-    agent.setup(source_dir, {
+    agent.setup(worktree_dir, {
         "llm_api_url": LLM_API_URL,
         "llm_api_key": LLM_API_KEY,
     })
