@@ -149,12 +149,12 @@ Available models:
 
 - **Execution**: `claude -p --dangerously-skip-permissions --append-system-prompt <rules>` (non-interactive, full permissions)
 - **Instruction file**: `CLAUDE.md` generated per run in the target repo
-- **LiteLLM proxy**: Configured via `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` env vars
+- **LiteLLM proxy**: Configured via `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` env vars (agent clears `ANTHROPIC_API_KEY`)
 
 Debug artifacts:
 - Log directory: `/root/.claude` (registered via `register-log-dir`)
-- Per-run logs: `/work/agent/claude_code_stdout.log`, `/work/agent/claude_code_stderr.log`
-- Claude Code internal logs: `/root/.claude/projects/`
+- Per-run logs: `/work/agent/claude_stdout.log`, `/work/agent/claude_stderr.log`
+- Claude Code internal logs: `/root/.claude/debug/`
 
 ## Patch submission
 
