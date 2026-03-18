@@ -149,7 +149,7 @@ Available models:
 
 - **Execution**: `claude -p --dangerously-skip-permissions --append-system-prompt <rules>` (non-interactive, full permissions)
 - **Instruction file**: `CLAUDE.md` generated per run in the target repo
-- **LiteLLM proxy**: Configured via `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` env vars (agent clears `ANTHROPIC_API_KEY`)
+- **LiteLLM proxy**: Framework provides `OSS_CRS_LLM_API_URL` + `OSS_CRS_LLM_API_KEY`; agent remaps to `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`
 
 Debug artifacts:
 - Log directory: `/root/.claude` (registered via `register-log-dir`)
