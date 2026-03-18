@@ -1,5 +1,9 @@
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from agents import claude_code
 
@@ -36,13 +40,15 @@ def test_run_does_not_pass_debug_file_flag(monkeypatch, tmp_path: Path) -> None:
         },
     )
     monkeypatch.setattr(claude_code, "AGENT_TIMEOUT", 0)
+    monkeypatch.setattr(claude_code, "_snapshot_patch_state", lambda patches_dir: {})
+    monkeypatch.setattr(claude_code, "_changed_patches", lambda before, patches_dir: [])
     monkeypatch.setattr(
         claude_code.subprocess,
         "run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=0, stderr=b""),
+        lambda *args, **kwargs: type("R", (), {"returncode": 0, "stderr": b""})(),
     )
 
-    captured: dict[str, object] = {}
+    popen_calls: list[list[str]] = []
 
     class FakeStdin:
         def __init__(self) -> None:
@@ -55,11 +61,9 @@ def test_run_does_not_pass_debug_file_flag(monkeypatch, tmp_path: Path) -> None:
             return None
 
     class FakePopen:
-        def __init__(self, cmd, stdin, stdout, stderr, text, cwd, start_new_session):
-            captured["cmd"] = list(cmd)
-            captured["cwd"] = cwd
-            captured["stdin"] = FakeStdin()
-            self.stdin = captured["stdin"]
+        def __init__(self, cmd, **kwargs):
+            popen_calls.append(list(cmd))
+            self.stdin = FakeStdin()
             self.returncode = 0
             self.pid = 12345
 
@@ -84,7 +88,8 @@ def test_run_does_not_pass_debug_file_flag(monkeypatch, tmp_path: Path) -> None:
     )
 
     assert produced is False
-    cmd = captured["cmd"]
+    assert len(popen_calls) == 1
+    cmd = popen_calls[0]
     assert cmd[:3] == ["claude", "-p", "--dangerously-skip-permissions"]
     assert "--append-system-prompt" in cmd
     assert "--debug-file" not in cmd
