@@ -13,17 +13,17 @@ target_build_phase:
     outputs:
       - build
       - src
-  - name: inc-builder-asan
+  - name: inc-builder  # sanitizer-neutral; actual sanitizer is overridable via compose additional_env
     snapshot: true
     dockerfile: oss-crs-infra:default-builder
     additional_env:
-      SANITIZER: address
+      SANITIZER: address  # default; override in compose additional_env for other sanitizers
 
 crs_run_phase:
   patcher:
     dockerfile: oss-crs/patcher.Dockerfile
     additional_env:
-      # Set via compose yaml additional_env.
+      # Default values. To override, set additional_env in compose yaml.
       CRS_AGENT: claude_code
       # CLAUDE_CODE_CLI_VERSION: "2.1.42"  # Optional prepare-phase override for base image build
       # ANTHROPIC_MODEL: claude-opus-4-6
@@ -32,7 +32,8 @@ crs_run_phase:
       # ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-4-6
       # ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-4-5-20251001
       # AGENT_TIMEOUT: "0"  # seconds, 0 = no limit (default)
-  inc-builder-asan:
+      # BUILDER_MODULE: "inc-builder"  # Builder sidecar module (must match run_snapshot module name)
+  inc-builder:
     run_snapshot: true
     dockerfile: oss-crs-infra:default-builder
 
@@ -53,6 +54,3 @@ required_llms:
   - claude-opus-4-6
   - claude-haiku-4-5-20251001
   - claude-sonnet-4-6
-#  - claude-opus-4-5-20251101
-#  - claude-sonnet-4-5-20250929
-#  - claude-haiku-4-5-20251001

@@ -66,6 +66,7 @@ bin/
 agents/
   claude_code.py       # Claude Code agent (default)
   claude_code.md       # CLAUDE.md template with libCRS tool docs
+  sections/            # Dynamic CLAUDE.md section partial templates
   template.py          # Stub for creating new agents
 oss-crs/
   crs.yaml             # CRS metadata (supported languages, models, etc.)
@@ -130,7 +131,7 @@ crs-compose up -f crs-compose.yaml
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | unset | Optional env override for the `sonnet` alias |
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | unset | Optional env override for the `haiku` alias |
 | `AGENT_TIMEOUT` | `0` (no limit) | Agent timeout in seconds (0 = run until budget exhausted) |
-| `BUILDER_MODULE` | `inc-builder-asan` | Builder sidecar module name (must match a `run_snapshot` entry in crs.yaml) |
+| `BUILDER_MODULE` | `inc-builder` | Builder sidecar module name (must match a `run_snapshot` entry in crs.yaml) |
 | `OSS_CRS_SNAPSHOT_IMAGE` | framework-provided | Required snapshot image reference used by patcher startup checks |
 
 These are standard Claude Code env vars. The CRS reads whatever values you provide in `additional_env`; if you want reproducible benchmarking, set each one explicitly.
@@ -144,8 +145,13 @@ Available models:
 - `claude-sonnet-4-20250514`
 - `claude-haiku-4-5-20251001`
 
-## Debug artifacts
+## Runtime behavior
 
+- **Execution**: `claude -p --dangerously-skip-permissions --append-system-prompt <rules>` (non-interactive, full permissions)
+- **Instruction file**: `CLAUDE.md` generated per run in the target repo
+- **LiteLLM proxy**: Configured via `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` env vars
+
+Debug artifacts:
 - Log directory: `/root/.claude` (registered via `register-log-dir`)
 - Per-run logs: `/work/agent/claude_code_stdout.log`, `/work/agent/claude_code_stderr.log`
 - Claude Code internal logs: `/root/.claude/projects/`
@@ -168,6 +174,10 @@ Runtime remains trust-based: the patcher does not re-run final verification. Onc
 3. Set `CRS_AGENT=my_agent`.
 
 The agent receives:
+- **setup(source_dir, config)** config keys:
+  - `llm_api_url` — optional LiteLLM base URL
+  - `llm_api_key` — optional LiteLLM key
+  - `claude_home` — path for Claude Code state/logs
 - **source_dir** — clean git repo of the target project
 - **pov_dir** — boot-time POV input directory (may be empty)
 - **bug_candidate_dir** — boot-time bug-candidate directory (may be empty)

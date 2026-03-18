@@ -36,6 +36,7 @@ def run(
     pov_dir, bug_candidate_dir, diff_dir, and seed_dir are boot-time input
     directories. Any of them may be empty. The agent should inspect and load
     whatever files it needs from those paths.
+    sanitizer is typically one of: address, undefined.
 
     The agent should:
     1. Analyze available evidence (reproduce POVs and/or inspect bug-candidate reports)

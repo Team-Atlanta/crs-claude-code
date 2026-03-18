@@ -1,7 +1,7 @@
-## Diff Context (Delta Mode)
+## Diff Files
 
-These diff files provide delta-mode context for the vulnerability. Use them to localize the issue, but do not blindly revert them.
+Boot-time diff files were provided for this run:
 
-Changed files: {changed_files_str}
+{diff_list}
 
-{diff_block}
+Inspect any relevant diff files directly if they help localize the vulnerability.
