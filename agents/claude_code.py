@@ -91,6 +91,14 @@ def setup(source_dir: Path, config: dict) -> None:
     - Writes .claude.json config
     - Writes CLAUDE.md into source_dir with libCRS tool docs + workflow
     """
+    try:
+        ver = subprocess.run(
+            ["claude", "--version"], capture_output=True, text=True, timeout=10,
+        )
+        logger.info("Claude Code CLI version: %s", ver.stdout.strip() or ver.stderr.strip())
+    except Exception as e:
+        logger.warning("Failed to get Claude Code version: %s", e)
+
     llm_api_url = config.get("llm_api_url", "")
     llm_api_key = config.get("llm_api_key", "")
 
