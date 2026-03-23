@@ -12,6 +12,5 @@ compile
 
 # Submit build outputs
 libCRS submit-build-output "$OUT" build
-libCRS submit-build-output "$SRC" src
 
 log "Build completed successfully."

@@ -269,7 +269,8 @@ def setup_source() -> Path | None:
     download_root.mkdir(parents=True, exist_ok=True)
 
     try:
-        worktree_dir = Path(crs.download_source(SourceType.REPO, download_root))
+        crs.download_source(SourceType.TARGET_SOURCE, download_root)
+        worktree_dir = download_root
     except Exception as repo_error:
         logger.error("Failed to download repo source via libCRS: %s", repo_error)
         return None
@@ -284,33 +285,25 @@ def setup_source() -> Path | None:
         )
         return None
 
-    if (worktree_dir / ".git").exists():
-        return worktree_dir
-
-    logger.info("No .git found in %s, initializing git repo", worktree_dir)
-    subprocess.run(["git", "init"], cwd=worktree_dir, capture_output=True, timeout=60)
-    subprocess.run(["git", "add", "-A"], cwd=worktree_dir, capture_output=True, timeout=60)
-    commit_proc = subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=crs-claude-code",
-            "-c",
-            "user.email=crs-claude-code@local",
-            "commit",
-            "-m",
-            "initial source",
-        ],
-        cwd=worktree_dir, capture_output=True, timeout=60,
-    )
-    if commit_proc.returncode != 0:
-        stderr = (
-            commit_proc.stderr.decode(errors="replace")
-            if isinstance(commit_proc.stderr, bytes)
-            else str(commit_proc.stderr)
+    # Initialize a git repo if the resolved project directory doesn't have one.
+    # The agent needs git to generate patches (git add -A && git diff --cached).
+    if not (worktree_dir / ".git").exists():
+        logger.info("No .git found in %s, initializing git repo", worktree_dir)
+        subprocess.run(["git", "init"], cwd=worktree_dir, capture_output=True, timeout=60)
+        subprocess.run(["git", "add", "-A"], cwd=worktree_dir, capture_output=True, timeout=60)
+        commit_proc = subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=crs-claude-code",
+                "-c",
+                "user.email=crs-claude-code@local",
+                "commit",
+                "-m",
+                "initial source",
+            ],
+            cwd=worktree_dir, capture_output=True, timeout=60,
         )
-        logger.error("Failed to create initial commit: %s", stderr.strip())
-        return None
 
     return worktree_dir
 

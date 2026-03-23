@@ -12,8 +12,7 @@ target_build_phase:
     dockerfile: oss-crs/builder.Dockerfile
     outputs:
       - build
-      - src
-  - name: inc-builder  # sanitizer-neutral; actual sanitizer is overridable via compose additional_env
+  - name: inc-builder-asan
     snapshot: true
     dockerfile: oss-crs-infra:default-builder
     additional_env:
