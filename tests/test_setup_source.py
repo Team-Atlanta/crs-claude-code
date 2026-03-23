@@ -4,21 +4,19 @@ from types import SimpleNamespace
 import patcher
 
 
-def test_setup_source_uses_repo_hint_instead_of_scanning_nested_git_repos(
+def test_setup_source_returns_download_root_when_git_exists(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """With mount-based API, worktree_dir is always download_root (src/)."""
     work_dir = tmp_path / "work"
     source_dir = work_dir / "src"
-    project_dir = source_dir / "mock-c"
-    other_repo_dir = source_dir / "vendored"
-    (project_dir / ".git").mkdir(parents=True)
-    (other_repo_dir / ".git").mkdir(parents=True)
+    (source_dir / ".git").mkdir(parents=True)
 
     monkeypatch.setattr(patcher, "WORK_DIR", work_dir)
     monkeypatch.setattr(
         patcher,
         "crs",
-        SimpleNamespace(download_source=lambda source_type, dst: project_dir),
+        SimpleNamespace(download_source=lambda source_type, dst: None),
     )
 
     calls: list[tuple[list[str], Path | None]] = []
@@ -31,23 +29,22 @@ def test_setup_source_uses_repo_hint_instead_of_scanning_nested_git_repos(
 
     resolved = patcher.setup_source()
 
-    assert resolved == project_dir
+    assert resolved == source_dir.resolve()
     assert ["git", "init"] not in [cmd for cmd, _ in calls]
 
 
-def test_setup_source_initializes_git_only_in_returned_project_dir(
+def test_setup_source_initializes_git_when_no_dotgit(
     monkeypatch, tmp_path: Path
 ) -> None:
     work_dir = tmp_path / "work"
     source_dir = work_dir / "src"
-    project_dir = source_dir / "mock-c"
-    project_dir.mkdir(parents=True)
+    source_dir.mkdir(parents=True)
 
     monkeypatch.setattr(patcher, "WORK_DIR", work_dir)
     monkeypatch.setattr(
         patcher,
         "crs",
-        SimpleNamespace(download_source=lambda source_type, dst: project_dir),
+        SimpleNamespace(download_source=lambda source_type, dst: None),
     )
 
     calls: list[tuple[list[str], Path | None]] = []
@@ -60,6 +57,5 @@ def test_setup_source_initializes_git_only_in_returned_project_dir(
 
     resolved = patcher.setup_source()
 
-    assert resolved == project_dir
-    assert (["git", "init"], project_dir) in calls
-    assert (["git", "init"], source_dir) not in calls
+    assert resolved == source_dir.resolve()
+    assert (["git", "init"], source_dir.resolve()) in calls
