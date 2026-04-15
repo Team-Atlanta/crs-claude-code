@@ -29,11 +29,11 @@ Given any boot-time subset of vulnerability evidence (POVs, bug-candidate report
 │  │          │    │          │    │              │                   │
 │  │ Read     │    │ Edit src │    │ apply-patch  │──▶ Builder        │
 │  │ startup  │    │ git diff │    │   -build     │    sidecar        │
-│  │ evidence │    │          │    │              │◀── build_id       │
-│  └──────────┘    └──────────┘    │ run-pov ────│──▶ Builder        │
-│                                  │   (all POVs)│◀── pov_exit_code  │
-│                       ▲          │ run-test ───│──▶ Builder        │
-│                       │          │             │◀── test_exit_code  │
+│  │ evidence │    │          │    │              │◀── rebuild_id     │
+│  └──────────┘    └──────────┘    │ run-pov ────│──▶ Runner         │
+│                                  │   (all POVs)│◀── retcode        │
+│                       ▲          │ apply-patch │──▶ Builder        │
+│                       │          │   -test     │◀── retcode        │
 │                       │          └──────┬───────┘                   │
 │                       │                 │                           │
 │                       └── retry ◀── fail?                           │
@@ -51,7 +51,7 @@ Given any boot-time subset of vulnerability evidence (POVs, bug-candidate report
 
 1. **`run_patcher`** fetches available startup inputs (`POV`, `BUG_CANDIDATE`, `DIFF`, `SEED`) once, downloads source, and passes the fetched paths to the agent.
 2. The evidence is handed to **Claude Code** in a single session with generated `CLAUDE.md` instructions. No additional inputs are fetched after startup.
-3. The agent autonomously analyzes evidence, edits source, and uses **libCRS** tools (`apply-patch-build`, `run-pov`, `run-test`) to iterate through the builder sidecar.
+3. The agent autonomously analyzes evidence, edits source, and uses **libCRS** tools (`apply-patch-build`, `run-pov`, `apply-patch-test`) to iterate as needed through the builder sidecar.
 4. When the first final `.diff` is written to `/patches/`, the patcher submits that single file with `crs.submit(DataType.PATCH, patch_path)` and exits. Later patch files or modifications are ignored.
 
 The agent is language-agnostic — it edits source and generates diffs while the builder sidecar handles compilation. The sanitizer type (`address` only in this CRS) is passed to the agent for context.
@@ -82,7 +82,7 @@ oss-crs/
 
 - **[oss-crs](https://github.com/oss-crs/oss-crs)** — the CRS framework (`crs-compose` CLI)
 
-Builder sidecars for incremental builds are declared in `oss-crs/crs.yaml` (`snapshot: true` / `run_snapshot: true`) and handled automatically by the framework — no separate builder setup is needed.
+Builder and runner sidecars are injected automatically by the framework — no separate builder setup is needed.
 
 ## Quick start
 
@@ -131,8 +131,6 @@ crs-compose up -f crs-compose.yaml
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | unset | Optional env override for the `sonnet` alias |
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | unset | Optional env override for the `haiku` alias |
 | `AGENT_TIMEOUT` | `0` (no limit) | Agent timeout in seconds (0 = run until budget exhausted) |
-| `BUILDER_MODULE` | `inc-builder` | Builder sidecar module name (must match a `run_snapshot` entry in crs.yaml) |
-| `OSS_CRS_SNAPSHOT_IMAGE` | framework-provided | Required snapshot image reference used by patcher startup checks |
 
 These are standard Claude Code env vars. The CRS reads whatever values you provide in `additional_env`; if you want reproducible benchmarking, set each one explicitly.
 
@@ -188,16 +186,14 @@ The agent receives:
 - **work_dir** — scratch space
 - **language** — target language (c, c++, jvm)
 - **sanitizer** — sanitizer type (`address` only)
-- **builder** — builder sidecar module name (keyword-only, required)
-
 All optional inputs are boot-time only. The patcher fetches them once and passes directory paths to the agent; no new POVs, bug-candidates, diff files, or seeds appear during the run.
 
-The agent has access to three libCRS commands (the `--builder` flag specifies which builder sidecar module to use):
-- `libCRS apply-patch-build <patch.diff> <response_dir> --builder <module>` — build a patch
-- `libCRS run-pov <pov> <response_dir> --harness <h> --build-id <id> --builder <module>` — test against a POV
-- `libCRS run-test <response_dir> --build-id <id> --builder <module>` — run the project's test suite
+The agent has access to three libCRS commands (builder/runner sidecars are resolved automatically via `BUILDER_MODULE` env var set by the framework):
+- `libCRS apply-patch-build <patch.diff> <response_dir>` — build a patch
+- `libCRS run-pov <pov> <response_dir> --harness <h> [--rebuild-id <id>]` — test against a POV (omit `--rebuild-id` for base build)
+- `libCRS apply-patch-test <patch.diff> <response_dir>` — run the project's test suite
 
 For transparent diagnostics, always inspect response_dir logs:
-- Build: `build.log`, `build_stdout.log`, `build_stderr.log`
-- POV: `pov_stdout.log`, `pov_stderr.log`
-- Test: `test_stdout.log`, `test_stderr.log`
+- Build: `stdout.log`, `stderr.log`, `retcode`
+- POV: `stdout.log`, `stderr.log`, `retcode`
+- Test: `stdout.log`, `stderr.log`, `retcode`

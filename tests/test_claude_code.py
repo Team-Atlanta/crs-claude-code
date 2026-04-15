@@ -84,7 +84,6 @@ def test_run_does_not_pass_debug_file_flag(monkeypatch, tmp_path: Path) -> None:
         "fuzz_parse_buffer_section",
         patches_dir,
         work_dir,
-        builder="inc-builder",
     )
 
     assert produced is False

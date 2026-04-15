@@ -1,5 +1,5 @@
-- [ ] `build_exit_code` = 0
+- [ ] `apply-patch-build` retcode = 0
 {pov_line}
-- [ ] `test_exit_code` = 0 (or explicitly skipped by harness policy)
+- [ ] `apply-patch-test` retcode = 0 (or explicitly skipped by harness policy)
 {diff_line}
 - [ ] Patch is minimal and targets root cause
