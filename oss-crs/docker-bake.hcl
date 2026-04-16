@@ -18,7 +18,7 @@ variable "VERSION" {
 }
 
 variable "CLAUDE_CODE_CLI_VERSION" {
-  default = "2.1.42"
+  default = "2.1.92"
 }
 
 function "tags" {
