@@ -1,7 +1,7 @@
 name: crs-claude-code
 type:
   - bug-fixing
-version: 1.0.0
+version: cli-2.0.17
 docker_registry: ghcr.io/team-atlanta/crs-claude-code
 
 prepare_phase:

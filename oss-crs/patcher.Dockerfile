@@ -11,7 +11,7 @@
 ARG target_base_image
 ARG crs_version
 
-FROM claude-code-base
+FROM claude-code-base:cli-2.0.17
 
 # Install libCRS (CLI + Python package)
 COPY --from=libcrs . /libCRS

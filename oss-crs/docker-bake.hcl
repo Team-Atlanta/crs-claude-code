@@ -14,19 +14,18 @@ variable "REGISTRY" {
 }
 
 variable "VERSION" {
-  default = "latest"
+  default = "cli-2.0.17"
 }
 
 variable "CLAUDE_CODE_CLI_VERSION" {
-  default = "2.1.92"
+  default = "2.0.17"
 }
 
 function "tags" {
   params = [name]
   result = [
     "${REGISTRY}/${name}:${VERSION}",
-    "${REGISTRY}/${name}:latest",
-    "${name}:latest"
+    "${name}:${VERSION}"
   ]
 }
 
