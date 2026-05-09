@@ -36,7 +36,7 @@ HARNESS = os.environ.get("OSS_CRS_TARGET_HARNESS", "")
 LANGUAGE = os.environ.get("FUZZING_LANGUAGE", "c")
 SANITIZER = os.environ.get("SANITIZER", "address")
 LLM_API_URL = os.environ.get("OSS_CRS_LLM_API_URL", "")
-LLM_API_KEY = os.environ.get("OSS_CRS_LLM_API_KEY", "")
+LLM_API_KEY = open(os.environ["OSS_CRS_LLM_API_KEY_FILE"]).read().strip() if os.environ.get("OSS_CRS_LLM_API_KEY_FILE") else os.environ.get("OSS_CRS_LLM_API_KEY", "")
 
 CRS_AGENT = os.environ.get("CRS_AGENT", "claude_code")
 
