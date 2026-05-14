@@ -307,7 +307,9 @@ def run(
     cmd = [
         "claude",
         "-p",
+        "--verbose",
         "--dangerously-skip-permissions",
+        "--output-format", "stream-json",
         "--append-system-prompt", system_prompt,
     ]
 
