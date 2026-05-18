@@ -104,7 +104,10 @@ def setup(source_dir: Path, config: dict) -> None:
 
     os.environ["IS_SANDBOX"] = "1"
 
-    if llm_api_url and llm_api_key:
+    oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if oauth_token:
+        logger.info("CLAUDE_CODE_OAUTH_TOKEN found, using OAuth authentication (ignoring OSS_CRS LLM config)")
+    elif llm_api_url and llm_api_key:
         os.environ["ANTHROPIC_BASE_URL"] = llm_api_url
         os.environ["ANTHROPIC_AUTH_TOKEN"] = llm_api_key
         os.environ["ANTHROPIC_API_KEY"] = ""
